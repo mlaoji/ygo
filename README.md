@@ -14,11 +14,10 @@
     go get github.com/mlaoji/ygo
     go get github.com/mlaoji/yclient
     go get github.com/mlaoji/yqueue
-    go get github.com/mlaoji/demo
 
 ## Quick Start
 
-1. 把github.com/mlaoji/demo目录拷贝到你的GOPATH/src路径下,作为一个演示项目
+1. 把github.com/mlaoji/ygo/demo目录拷贝到你的GOPATH/src路径下,作为一个演示项目
 2. 进入demo目录，执行 ./run, 看看效果(实际执行的是go run main.go -f xxxx.conf -m http), 这样已经启动了一个http服务，浏览器访问：http://127.0.0.1:6002/testHttp/hello
 3. 再执行 ./run rpc, 看看效果(实际执行的是go run main.go -f xxxx.conf -m rpc), 这样就启动了一个RPC服务，可以到 tool目录下运行testRpc.go 测试一下rpc效果
 4. 应该已经知道，-f 后面跟的就是配置文件 -m 后面跟的就是服务模式(http、rpc、 cli)
