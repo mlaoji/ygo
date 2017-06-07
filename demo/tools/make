@@ -1,0 +1,28 @@
+#!/bin/bash
+cd `dirname $0`
+
+ROOT_DIR=`pwd`
+
+mygopath=$(dirname $(dirname $(dirname $ROOT_DIR)))
+sysgopath=$GOPATH
+
+if [ "$sysgopath" != "" ]; then
+export GOPATH=$mygopath:$sysgopath
+else
+export GOPATH=$mygopath
+fi
+
+echo "GOPATH:$GOPATH"
+
+if [ "$1" == "" ]; then
+    echo "need input .go file"
+    exit 1
+fi
+
+go build $1
+
+if [ $? != 0 ]; then
+    exit 1
+fi
+
+export GOPATH=$sysgopath

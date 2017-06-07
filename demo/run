@@ -1,0 +1,27 @@
+mode=$1
+idc=$2
+if [ "$mode" == "" ] ;then
+    mode=http
+fi
+
+if [ "$idc" != "" ] ;then
+    idc=".$idc"
+fi
+
+ROOT_DIR=`pwd`
+
+mygopath=$(dirname $(dirname $ROOT_DIR))
+sysgopath=$GOPATH
+
+if [ "$sysgopath" != "" ]; then
+export GOPATH=$mygopath:$sysgopath
+else
+export GOPATH=$mygopath
+fi
+
+echo "GOPATH:$GOPATH"
+
+echo "go run main.go -o $PWD/logs -f $PWD/conf/app.conf$idc -m $mode"
+go run main.go -o $PWD/logs -f $PWD/conf/app.conf$idc -m $mode
+
+export GOPATH=$sysgopath
