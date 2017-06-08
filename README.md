@@ -24,3 +24,4 @@
 5. 运行make脚本, 编译并输出执行文件到./bin 目录, 文件名称默认为:"app.bin", 也可指定名称, 如  make passport, 则文件名为 passport.add.bin 
 6. 运行控制台脚本 ./serverctl 启动、停止、重启, ./serverctl start|stop|restart|reload
 
+文档梳理中……
