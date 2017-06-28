@@ -1,6 +1,7 @@
 # YGO
 
 这是你需要的golang微服务框架
+
 可支持同一代码在 http 和 rpc 服务模式的切换
 
 ## Installation
