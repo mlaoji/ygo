@@ -1,6 +1,6 @@
 # YGO
 
-这是你需要的golang微服务框架，绝对不是简单的URL路由
+这是你需要的golang微服务框架
 
 ## Installation
 
