@@ -233,10 +233,10 @@ func DateTime(times ...int) string { // {{{
 	return time.Now().Format("2006-01-02 15:04:05")
 } // }}}
 
-func StrToTime(datetime string) int {
+func StrToTime(datetime string) int { // {{{
 	t, _ := time.ParseInLocation("2006-01-02 15:04:05", datetime, time.Local)
 	return int(t.Unix())
-}
+} // }}}
 
 //参数：小时,分,秒,月,日,年
 func MkTime(t ...int) int { // {{{
@@ -305,32 +305,53 @@ func AsInt(num interface{}) int { // {{{
 		val = fmt.Sprint(num)
 	}
 
-	return Toint(val)
+	return ToInt(val)
 } // }}}
 
-func Toint(num string) int {
+func AsString(str interface{}) string { // {{{
+	if nil == str {
+		return ""
+	}
+
+	return fmt.Sprint(str)
+} // }}}
+
+func ToInt(num string) int { // {{{
 	numint, err := strconv.Atoi(num)
 	if nil != err {
 		return 0
 	}
 	return numint
-}
+} // }}}
 
-func Tostring(num int) string {
+func ToFloat(num string, size ...int) float64 { // {{{
+	bitsize := 64
+	if len(size) > 0 && size[0] > 0 {
+		bitsize = size[0]
+	}
+
+	numfloat, err := strconv.ParseFloat(num, bitsize)
+	if nil != err {
+		return 0
+	}
+	return numfloat
+} // }}}
+
+func ToString(num int) string { // {{{
 	return strconv.Itoa(num)
-}
+} // }}}
 
-func TointArray(nums []string) []int { // {{{
+func ToIntArray(nums []string) []int { // {{{
 	intnums := []int{}
 
 	for _, v := range nums {
-		intnums = append(intnums, Toint(v))
+		intnums = append(intnums, ToInt(v))
 	}
 
 	return intnums
 } // }}}
 
-func TostringArray(nums []int) []string { // {{{
+func ToStringArray(nums []int) []string { // {{{
 	strnums := []string{}
 
 	for _, v := range nums {
@@ -356,8 +377,8 @@ func VersionCompare(ver, oldver string) bool { // {{{
 		vs1 = append(vs1, "")
 		vs2 = append(vs2, "")
 
-		v1 := Toint(vs1[i])
-		v2 := Toint(vs2[i])
+		v1 := ToInt(vs1[i])
+		v2 := ToInt(vs2[i])
 		if v1 > v2 {
 			return true
 		} else if v1 < v2 {

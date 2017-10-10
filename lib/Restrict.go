@@ -116,7 +116,7 @@ func (this *Restrict) getRecord(uniqid string) (int, error) { //{{{
 			return 0, errors.New(fmt.Sprint(err))
 		}
 
-		return Toint(cache), nil
+		return ToInt(cache), nil
 	}
 } // }}}
 

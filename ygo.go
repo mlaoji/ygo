@@ -63,7 +63,12 @@ func (this *Ygo) envInit() {
 		}
 	}
 
-	lib.Logger.Init(*logPath, lib.Conf.Get("log_name"), lib.Conf.GetInt("log_level"))
+	log_level := lib.Conf.GetInt("log_level")
+	if *debug {
+		log_level = 0
+	}
+
+	lib.Logger.Init(*logPath, lib.Conf.Get("log_name"), log_level)
 
 	lib.LocalCache.Init()
 

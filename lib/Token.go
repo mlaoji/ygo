@@ -2,13 +2,14 @@ package lib
 
 import (
 	"encoding/binary"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
 var TokenSecret = ""
 
-//用户系统中token.go的代码片段,只提供校验方法
 const (
 	TOKEN_SECRET = "U4rnhBc9yruM"
 	TOKEN_TTL    = 604800     //86400 * 7
@@ -22,6 +23,62 @@ var TOKEN_SCOPE = map[string]string{
 	"app": "1",
 	"web": "2",
 }
+
+//Make {{{
+//26位header + 8位随机 + 4位签名(最大38位，最小30位)
+//ttl 表示生成token 的时间戳，过期时间在校验时计算
+func MakeToken(uid int, options ...string) (token string, tsign string) {
+	saltstr := ""
+	scopestr := ""
+
+	l := len(options)
+	if l > 0 { //盐
+		saltstr = options[0]
+	}
+	if l > 1 { //scope
+		scopestr = options[1]
+	}
+
+	if "" == scopestr || "" == TOKEN_SCOPE[scopestr] {
+		scopestr = "*"
+	}
+
+	ttl := int(time.Now().Unix())
+	salt := getSalt(saltstr) // 8位
+	scope := TOKEN_SCOPE[scopestr]
+	random := string(Rand(8, RAND_KIND_ALL)) // 8位
+
+	token = makeToken(uid, salt, ttl, scope, random)
+	tsign = makeToken(TOKEN_MAXID-uid, random, ttl, scope, salt) //交换salt 和 random位置
+	return
+} //}}}
+
+//{{{
+func makeToken(uid int, salt string, ttl int, scope, random string) string {
+	userid := make([]byte, 4)
+	expire := make([]byte, 4)
+
+	binary.BigEndian.PutUint32(userid, uint32(uid))
+	binary.BigEndian.PutUint32(expire, uint32(ttl))
+
+	header := fmt.Sprintf("%x%x%s%s%s", userid, expire, scope, TOKEN_VER, salt)
+
+	/*
+		fmt.Printf("header:%s\n", header)
+		fmt.Printf("uid:%x\n", string(userid))
+		fmt.Printf("expire:%x\n", string(expire))
+		fmt.Printf("scope:%x\n", string(scope))
+		fmt.Printf("salt:%s\n", salt)
+		fmt.Printf("r:%s\n", random)
+	*/
+
+	sign := getSign(Concat(string(userid), string(expire), string(scope), TOKEN_VER, salt, random))
+	token := Concat(header, random, sign)
+
+	return strings.TrimLeft(token, "0")
+}
+
+// }}}
 
 //GetTokenInfo {{{
 func GetTokenInfo(token string) (ret map[string]interface{}, err bool) {
@@ -141,6 +198,24 @@ func CheckSign(sign string, userid int, ttls ...int) bool {
 	}
 
 	return true
+} // }}}
+
+//GetTokenBySign{{{
+func GetTokenBySign(sign string) (token string, err bool) {
+	tokeninfo, _err := GetTokenInfo(sign)
+	if _err {
+		err = true
+		return
+	}
+
+	uid := tokeninfo["userid"].(int)
+	salt := tokeninfo["random"].(string)
+	random := tokeninfo["salt"].(string)
+	ttl := tokeninfo["time"].(int)
+	scope := TOKEN_SCOPE[tokeninfo["scope"].(string)]
+
+	token = makeToken(TOKEN_MAXID-uid, salt, ttl, scope, random)
+	return
 } // }}}
 
 func getSign(str string) string {

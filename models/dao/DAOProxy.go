@@ -357,7 +357,7 @@ func (this *DAOProxy) GetRecords(where string, start, num int, order string, par
 	}
 
 	if num > 0 {
-		where = where + " limit " + lib.Tostring(start) + "," + lib.Tostring(num)
+		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
 	}
 
 	list := this.DBReader.GetAll("select "+this.fields+" from "+this.table+" where "+where, params...)

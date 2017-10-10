@@ -60,12 +60,27 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	this.prepare(r.Form, HTTP_MODE, requestUri)
 
+	//token保存在cookie中
+	//校验token是否有效，同时与参数中的userid一致
+	//优先取cookie中的userid, 不存在则使用url参数
+
 	userId := this.GetInt("userid")
-	token := this.GetCookie("token")
+	ck_userId := this.GetCookie("userid")
+	if len(ck_userId) > 0 {
+		userId = lib.ToInt(ck_userId)
+	}
 
 	auth_conf := lib.Conf.GetAll("auth_conf")
-	token_ttl := lib.Toint(auth_conf["token_ttl"])
+	token_ttl := lib.ToInt(auth_conf["token_ttl"])
 	token_secret := auth_conf["token_secret"]
+	token_key := auth_conf["token_key"]
+	access_redirect := auth_conf["access_redirect"] //校验token失败时跳转
+
+	if 0 == len(token_key) {
+		token_key = "token"
+	}
+
+	token := this.GetCookie(token_key)
 
 	if len(token_secret) > 0 {
 		lib.TokenSecret = token_secret
@@ -84,6 +99,17 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		if "" == api_need_check_token_except || !strings.Contains(","+strings.ToLower(api_need_check_token_except)+",", ","+uri+",") {
 			api_need_check_token := "," + strings.ToLower(auth_conf["token_api"]) + ","
 			if api_need_check_token == ",," || strings.Contains(api_need_check_token, ",*,") || strings.Contains(api_need_check_token, ","+uri+",") {
+				if len(access_redirect) > 0 && !logined {
+					if strings.Contains(access_redirect, "?") {
+						access_redirect += "&"
+					} else {
+						access_redirect += "?"
+					}
+
+					access_redirect += "http_referer=" + url.QueryEscape(this.GetHeader("Referer"))
+					this.Redirect(access_redirect) //如果设置跳转URL，则直接跳转
+				}
+
 				lib.Interceptor(logined, lib.ERR_TOKEN, userId)
 			}
 		}
@@ -95,7 +121,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 			api_need_check_sign := "," + strings.ToLower(auth_conf["sign_api"]) + ","
 			if api_need_check_sign == ",," || strings.Contains(api_need_check_sign, ",*,") || strings.Contains(api_need_check_sign, ","+uri+",") {
 				sign := this.GetCookie("sign")
-				ttl := lib.Toint(auth_conf["sign_ttl"])
+				ttl := lib.ToInt(auth_conf["sign_ttl"])
 
 				token_secret := auth_conf["token_secret"]
 				if len(token_secret) > 0 {
@@ -132,7 +158,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 			blacklist := lib.Conf.GetSlice(freq_rule+"_blacklist", ",", "api_freq_conf")
 			freq_rule_conf := lib.Conf.GetSlice(freq_rule, ",", "api_freq_conf")
 			if len(freq_rule_conf) > 2 {
-				freq := lib.NewRestrict(freq_rule, lib.Toint(freq_rule_conf[0]), lib.Toint(freq_rule_conf[1])) //规则,频率,周期(秒)
+				freq := lib.NewRestrict(freq_rule, lib.ToInt(freq_rule_conf[0]), lib.ToInt(freq_rule_conf[1])) //规则,频率,周期(秒)
 				if len(whitelist) > 0 {
 					freq.AddWhitelist(whitelist)
 				}
@@ -330,22 +356,55 @@ func (this *BaseController) GetFromJson(key string) interface{} { // {{{
 
 func (this *BaseController) GetIp() string { // {{{
 	r := this.R
-	ip := ""
-	proxyip := ""
-	if r.Header.Get("X-Forwarded-For") != "" {
-		proxyip = r.Header.Get("X-Forwarded-For")
-	} else if r.Header.Get("X-Real-IP") != "" {
-		proxyip = r.Header.Get("X-Real-IP")
-	} else if r.Header.Get("Host") != "" {
-		proxyip = r.Header.Get("Host")
+
+	ip := r.Header.Get("X-Forwarded-For")
+	if ip == "" {
+		ip = r.Header.Get("X-Real-IP")
+		if ip == "" {
+			ip = r.Header.Get("Host")
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+		}
 	} else {
-		proxyip = r.RemoteAddr
+		//X-Forwarded-For 的格式 client1, proxy1, proxy2
+		ips := strings.Split(ip, ",")
+		if len(ips) > 0 {
+			ip = ips[0]
+		}
 	}
-	ips := strings.Split(proxyip, ":")
+
+	//去除端口号
+	ips := strings.Split(ip, ":")
 	if len(ips) > 0 {
 		ip = ips[0]
 	}
+
 	return ip
+} // }}}
+
+func (this *BaseController) SetCookie(key, val string, lifetime int) { // {{{
+	cookie := &http.Cookie{
+		Name:     key,
+		Value:    val,
+		Path:     "/",
+		HttpOnly: false,
+		MaxAge:   lifetime,
+		Expires:  time.Now().Add(time.Second * time.Duration(lifetime)),
+	}
+	http.SetCookie(this.RW, cookie)
+} // }}}
+
+func (this *BaseController) UnsetCookie(key string) { // {{{
+	cookie := &http.Cookie{
+		Name:     key,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: false,
+		MaxAge:   0,
+		Expires:  time.Now().AddDate(-1, 0, 0),
+	}
+	http.SetCookie(this.RW, cookie)
 } // }}}
 
 func (this *BaseController) SetHeader(key, val string) { // {{{
@@ -383,7 +442,7 @@ func (this *BaseController) Render(data ...interface{}) { // {{{
 } // }}}
 
 //接口异常输出，在HttpApiServer中回调
-func (this *BaseController) RenderError(err interface{}) { // {{{
+func (this *BaseController) RenderError(err interface{}, data ...interface{}) { // {{{
 	var errno int
 	var errmsg string
 	var isbizerr bool
@@ -416,11 +475,19 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 		}
 	}
 
+	var retdata interface{}
+	if len(data) > 0 {
+		retdata = data[0]
+	} else {
+		retdata = make(map[string]interface{})
+	}
+
 	ret := map[string]interface{}{
 		"code":    errno,
 		"msg":     errmsg,
 		"time":    time.Now().Unix(),
 		"consume": this.Cost(),
+		"data":    retdata, //错误时，也可附带一些数据
 	}
 
 	res := lib.JsonEncode(ret)

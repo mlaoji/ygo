@@ -94,7 +94,8 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Server", "YGOServer")
 	if ref := r.Referer(); ref != "" {
 		if u, err := url.Parse(ref); nil == err {
-			if strings.Contains(u.Host, "hifun.mobi") {
+			cors_domain := Conf.Get("cors_domain")
+			if len(cors_domain) > 0 && strings.Contains(","+cors_domain+",", ","+u.Host+",") {
 				rw.Header().Set("Access-Control-Allow-Origin", u.Scheme+"://"+u.Host)
 				rw.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
