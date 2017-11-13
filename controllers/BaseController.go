@@ -6,6 +6,7 @@ import (
 	"github.com/mlaoji/ygo/lib"
 	"html/template"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,7 +57,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	this.RBody, _ = this.getRequestBody(r)
 
-	r.ParseForm()
+	r.ParseMultipartForm(32 << 20) //32M
 
 	this.prepare(r.Form, HTTP_MODE, requestUri)
 
@@ -354,11 +355,15 @@ func (this *BaseController) GetFromJson(key string) interface{} { // {{{
 	return ret
 } // }}}
 
+func (this *BaseController) GetFile(key string) (multipart.File, *multipart.FileHeader, error) { // {{{
+	return this.R.FormFile(key)
+} // }}}
+
 func (this *BaseController) GetIp() string { // {{{
 	r := this.R
 
 	ip := r.Header.Get("X-Forwarded-For")
-	if ip == "" {
+	if ip == "" || ip == "127.0.0.1" {
 		ip = r.Header.Get("X-Real-IP")
 		if ip == "" {
 			ip = r.Header.Get("Host")
