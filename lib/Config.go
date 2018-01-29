@@ -175,3 +175,28 @@ func (this *Config) GetSliceInt(key string, separators ...string) []int {
 	}
 	return results
 }
+
+func (this *Config) GetJson(keys ...string) interface{} {
+	key, section := this.parseKey(keys...)
+
+	value := this.Get(key, section)
+	if value == "" {
+		return nil
+	}
+
+	confDir := path.Dir(this.configFile)
+	newConfName := strings.Trim(value, emptyRunes)
+	newConfPath := path.Join(confDir, newConfName)
+
+	stream, err := ioutil.ReadFile(newConfPath)
+	if err != nil {
+		return errors.New("cannot load json config file for key:" + key + err.Error())
+	}
+
+	result := JsonDecode(string(stream))
+	if result == nil && len(stream) > 0 {
+		return errors.New("invalid json format for key:" + key)
+	}
+
+	return result
+}

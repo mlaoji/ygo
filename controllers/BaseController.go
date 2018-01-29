@@ -48,6 +48,8 @@ type BaseController struct {
 	mode       int
 	rpcContent string
 	uri        string
+	Controller string
+	Action     string
 	Debug      bool
 }
 
@@ -93,7 +95,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		this.UserId = userId
 	}
 
-	uri := strings.ToLower(this.uri)
+	uri := this.uri
 	//需要校验token的接口在配置中定义
 	if auth_conf["check_token"] == "1" && -1 == strings.Index(uri, "monitor/") { //默认关闭
 		api_need_check_token_except := auth_conf["token_api_except"]
@@ -108,6 +110,9 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 					}
 
 					access_redirect += "http_referer=" + url.QueryEscape(this.GetHeader("Referer"))
+					access_redirect += "&request_controller=" + this.Controller
+					access_redirect += "&request_action=" + this.Action
+					access_redirect += "&request_uri=" + url.QueryEscape(this.R.URL.String())
 					this.Redirect(access_redirect) //如果设置跳转URL，则直接跳转
 				}
 
@@ -152,7 +157,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	freq_conf := lib.Conf.GetAll("api_freq_conf")
 	if freq_conf["check_freq"] == "1" { //默认关闭
-		mtd := strings.ToLower(requestUri)
+		mtd := this.uri
 		mtd_cnf := lib.Conf.GetSlice(mtd, ",", "api_freq_conf")
 		for _, freq_rule := range mtd_cnf {
 			whitelist := lib.Conf.GetSlice(freq_rule+"_whitelist", ",", "api_freq_conf")
@@ -211,7 +216,10 @@ func (this *BaseController) prepare(r url.Values, mode int, requestUri string) {
 	this.Debug = DEBUG_OPEN
 	this.IR = &iRequest{r}
 	this.mode = mode
-	this.uri = requestUri
+	this.uri = strings.ToLower(requestUri)
+	uris := strings.Split(this.uri, "/")
+	this.Controller = uris[0]
+	this.Action = uris[1]
 } // }}}
 
 //以下 GetX 方法用于获取参数
