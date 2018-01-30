@@ -220,9 +220,103 @@ func (this *Config) GetSliceInt(key string, separators ...string) []int {
 func (this *Config) GetJson(keys ...string) interface{} { // {{{
 	key, section := this.parseKey(keys...)
 
+	parts := []string{}
+	if strings.Contains(key, ".") {
+		parts = strings.Split(key, ".")
+		key = parts[0]
+	}
+
 	if value, ok := this.jsonData[section][key]; ok {
+		if len(parts) > 1 {
+			for _, v := range parts[1:] {
+				if newval, ok := value.(map[string]interface{}); ok {
+					value = newval[v]
+				}
+			}
+		}
+
 		return value
 	}
 
 	return nil
+} // }}}
+
+func (this *Config) GetJsonInt(keys ...string) int { //{{{
+	value := this.GetJson(keys...)
+	return AsInt(value)
+} //}}}
+
+func (this *Config) GetJsonString(keys ...string) string { // {{{
+	value := this.GetJson(keys...)
+	return AsString(value)
+} // }}}
+
+func (this *Config) GetJsonBool(keys ...string) bool { // {{{
+	value := this.GetJson(keys...)
+
+	result, err := strconv.ParseBool(AsString(value))
+	if err != nil {
+		result = false
+	}
+
+	return result
+} // }}}
+
+func (this *Config) GetJsonSlice(keys ...string) []string { // {{{
+	value := this.GetJson(keys...)
+
+	slice := []string{}
+	for _, v := range value.([]interface{}) {
+		slice = append(slice, AsString(v))
+	}
+
+	return slice
+} // }}}
+
+func (this *Config) GetJsonSliceInt(keys ...string) []int { // {{{
+	value := this.GetJson(keys...)
+
+	slice := []int{}
+	for _, v := range value.([]interface{}) {
+		slice = append(slice, AsInt(v))
+	}
+
+	return slice
+} // }}}
+
+func (this *Config) GetJsonSliceMap(keys ...string) []map[string]string { // {{{
+	value := this.GetJson(keys...)
+
+	res := []map[string]string{}
+	for _, v := range value.([]interface{}) {
+		value := map[string]string{}
+		for k1, v1 := range v.(map[string]interface{}) {
+			value[k1] = AsString(v1)
+		}
+		res = append(res, value)
+	}
+
+	return res
+} // }}}
+
+func (this *Config) GetJsonMap(keys ...string) map[string]string { // {{{
+	value := this.GetJson(keys...)
+
+	res := map[string]string{}
+	for k, v := range value.(map[string]interface{}) {
+		res[k] = AsString(v)
+	}
+
+	return res
+} // }}}
+
+func (this *Config) GetJsonMapInt(keys ...string) map[string]int { // {{{
+	value := this.GetJson(keys...)
+
+	res := map[string]int{}
+	for k, v := range value.(map[string]interface{}) {
+		res[k] = AsInt(v)
+	}
+
+	return res
 } // }}}
