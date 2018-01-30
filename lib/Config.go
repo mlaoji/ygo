@@ -14,10 +14,12 @@ var Conf = &Config{}
 type Config struct {
 	configFile string
 	data       map[string]map[string]string
+	jsonData   map[string]map[string]interface{}
 }
 
 func (this *Config) Init(configFile string) {
 	this.data = make(map[string]map[string]string)
+	this.jsonData = make(map[string]map[string]interface{})
 	this.configFile = configFile
 	err := this.Load(configFile)
 	if err != nil {
@@ -41,6 +43,10 @@ func (this *Config) Load(configFile string) error {
 		this.data[section] = make(map[string]string)
 	}
 
+	if this.jsonData[section] == nil {
+		this.jsonData[section] = make(map[string]interface{})
+	}
+
 	for _, line := range lines {
 		line = strings.Trim(line, emptyRunes)
 		if line == "" || line[0] == '#' {
@@ -52,6 +58,10 @@ func (this *Config) Load(configFile string) error {
 			if this.data[section] == nil {
 				this.data[section] = make(map[string]string)
 			}
+
+			if this.jsonData[section] == nil {
+				this.jsonData[section] = make(map[string]interface{})
+			}
 			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
@@ -59,7 +69,20 @@ func (this *Config) Load(configFile string) error {
 			for i, part := range parts {
 				parts[i] = strings.Trim(part, emptyRunes)
 			}
-			this.data[section][parts[0]] = parts[1]
+
+			key := parts[0]
+			value := parts[1]
+			//include json file
+			if value[0] == '<' && value[len(value)-1] == '>' {
+				includes := strings.SplitN(strings.TrimSpace(value[1:len(value)-1]), " ", 2)
+				if len(includes) == 2 && strings.EqualFold(includes[0], "include") {
+					this.jsonData[section][key], err = this.loadJson(includes[1])
+					if nil != err {
+						return err
+					}
+				}
+			}
+			this.data[section][key] = value
 		} else {
 			//处理include
 			includes := strings.SplitN(parts[0], " ", 2)
@@ -79,6 +102,24 @@ func (this *Config) Load(configFile string) error {
 	}
 	return nil
 }
+
+func (this *Config) loadJson(file string) (interface{}, error) { // {{{
+	confDir := path.Dir(this.configFile)
+	newConfName := strings.Trim(file, emptyRunes)
+	newConfPath := path.Join(confDir, newConfName)
+
+	stream, err := ioutil.ReadFile(newConfPath)
+	if err != nil {
+		return nil, errors.New("cannot load json config file:" + err.Error())
+	}
+
+	result := JsonDecode(string(stream))
+	if result == nil && len(stream) > 0 {
+		return nil, errors.New("invalid json format for file:" + file)
+	}
+
+	return result, nil
+} // }}}
 
 func (this *Config) GetAll(section string) map[string]string {
 	return this.data[section]
@@ -176,27 +217,12 @@ func (this *Config) GetSliceInt(key string, separators ...string) []int {
 	return results
 }
 
-func (this *Config) GetJson(keys ...string) interface{} {
+func (this *Config) GetJson(keys ...string) interface{} { // {{{
 	key, section := this.parseKey(keys...)
 
-	value := this.Get(key, section)
-	if value == "" {
-		return nil
+	if value, ok := this.jsonData[section][key]; ok {
+		return value
 	}
 
-	confDir := path.Dir(this.configFile)
-	newConfName := strings.Trim(value, emptyRunes)
-	newConfPath := path.Join(confDir, newConfName)
-
-	stream, err := ioutil.ReadFile(newConfPath)
-	if err != nil {
-		return errors.New("cannot load json config file for key:" + key + err.Error())
-	}
-
-	result := JsonDecode(string(stream))
-	if result == nil && len(stream) > 0 {
-		return errors.New("invalid json format for key:" + key)
-	}
-
-	return result
-}
+	return nil
+} // }}}
