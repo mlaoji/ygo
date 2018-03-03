@@ -188,6 +188,17 @@ func (this *RedisClient) Incrby(key string, increment int) (val int, err error) 
 	return
 } //}}}
 
+// {{{ incrbyfloat
+func (this *RedisClient) IncrbyFloat(key string, increment interface{}) (val float64, err error) {
+	c, err := this._pool.Get()
+	if err != nil {
+		return
+	}
+	val, err = c.Cmd("INCRBYFLOAT", key, increment).Float64()
+	this._pool.Put(c)
+	return
+} //}}}
+
 // {{{ decr
 func (this *RedisClient) Decr(key string) (val int, err error) {
 	c, err := this._pool.Get()
@@ -534,6 +545,17 @@ func (this *RedisClient) Hincrby(key string, field interface{}, increment int) (
 		return
 	}
 	val, err = c.Cmd("HINCRBY", key, field, increment).Int()
+	this._pool.Put(c)
+	return
+} // }}}
+
+// {{{ HincrbyFloat
+func (this *RedisClient) HincrbyFloat(key string, field interface{}, increment interface{}) (val float64, err error) {
+	c, err := this._pool.Get()
+	if err != nil {
+		return
+	}
+	val, err = c.Cmd("HINCRBYFLOAT", key, field, increment).Float64()
 	this._pool.Put(c)
 	return
 } // }}}
