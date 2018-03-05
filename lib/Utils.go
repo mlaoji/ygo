@@ -225,6 +225,14 @@ func Date(times ...int) string { // {{{
 	return time.Now().Format("2006-01-02")
 } // }}}
 
+func UTCDate(times ...int) string { // {{{
+	if len(times) > 0 && times[0] > 0 {
+		return time.Unix(int64(times[0]), 0).UTC().Format("2006-01-02")
+	}
+
+	return time.Now().UTC().Format("2006-01-02")
+} // }}}
+
 func DateTime(times ...int) string { // {{{
 	if len(times) > 0 && times[0] > 0 {
 		return time.Unix(int64(times[0]), 0).Format("2006-01-02 15:04:05")
@@ -233,13 +241,26 @@ func DateTime(times ...int) string { // {{{
 	return time.Now().Format("2006-01-02 15:04:05")
 } // }}}
 
+func UTCDateTime(times ...int) string { // {{{
+	if len(times) > 0 && times[0] > 0 {
+		return time.Unix(int64(times[0]), 0).UTC().Format("2006-01-02 15:04:05")
+	}
+
+	return time.Now().UTC().Format("2006-01-02 15:04:05")
+} // }}}
+
 func StrToTime(datetime string) int { // {{{
 	t, _ := time.ParseInLocation("2006-01-02 15:04:05", datetime, time.Local)
 	return int(t.Unix())
 } // }}}
 
+func StrToUTCTime(datetime string) int { // {{{
+	t, _ := time.Parse("2006-01-02 15:04:05", datetime)
+	return int(t.Unix())
+} // }}}
+
 //参数：小时,分,秒,月,日,年
-func MkTime(t ...int) int { // {{{
+func mkTime(loc *time.Location, t ...int) int { // {{{
 	var M time.Month
 	h, m, s, d, y := 0, 0, 0, 0, 0
 
@@ -287,8 +308,16 @@ func MkTime(t ...int) int { // {{{
 		}
 	}
 
-	td := time.Date(y, M, d, h, m, s, 0, time.Local)
+	td := time.Date(y, M, d, h, m, s, 0, loc)
 	return int(td.Unix())
+} // }}}
+
+func MkTime(t ...int) int { // {{{
+	return mkTime(time.Local, t...)
+} // }}}
+
+func MkUTCTime(t ...int) int { // {{{
+	return mkTime(time.UTC, t...)
 } // }}}
 
 func Cost(start_time time.Time) int { //start_time=time.Now()

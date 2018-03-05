@@ -64,7 +64,7 @@ func makeToken(uid int, salt string, ttl int, scope, random string, signflag int
 	binary.BigEndian.PutUint32(userid, uint32(uid))
 	binary.BigEndian.PutUint32(expire, uint32(ttl))
 
-	header := fmt.Sprintf("%x%x%s%s%d%s", userid, expire, scope, TOKEN_VER, signflag, salt)
+	header := fmt.Sprintf("%x%x%s%s%s%d", userid, expire, salt, scope, TOKEN_VER, signflag)
 
 	/*
 		fmt.Printf("header:%s\n", header)
@@ -75,7 +75,7 @@ func makeToken(uid int, salt string, ttl int, scope, random string, signflag int
 		fmt.Printf("r:%s\n", random)
 	*/
 
-	sign := getSign(Concat(string(userid), string(expire), scope, TOKEN_VER, ToString(signflag), salt, random))
+	sign := getSign(Concat(ToString(uid), ToString(ttl), salt, scope, TOKEN_VER, ToString(signflag), random))
 	token := Concat(header, random, sign)
 
 	return strings.TrimLeft(token, "0")
@@ -106,10 +106,10 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 		return
 	}
 
-	salt := string([]byte(header)[hlen-8:])
-	signflag := string([]byte(header)[hlen-9 : hlen-8])
-	ver := string([]byte(header)[hlen-10 : hlen-9])
-	scope := string([]byte(header)[hlen-11 : hlen-10])
+	signflag := string([]byte(header)[hlen-1:])
+	ver := string([]byte(header)[hlen-2 : hlen-1])
+	scope := string([]byte(header)[hlen-3 : hlen-2])
+	salt := string([]byte(header)[hlen-11 : hlen-3])
 
 	_expire, _ := strconv.ParseUint(string([]byte(header)[hlen-19:hlen-11]), 16, 32)
 	_userid, _ := strconv.ParseUint(string([]byte(header)[0:hlen-19]), 16, 32)
@@ -130,7 +130,7 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 		fmt.Printf("r:%s\n", random_str)
 	*/
 
-	checksign := getSign(Concat(string(userid), string(expire), scope, ver, signflag, salt, random_str))
+	checksign := getSign(Concat(AsString(_userid), AsString(_expire), salt, scope, ver, signflag, random_str))
 
 	/*
 		fmt.Printf("%#v", checksign)
