@@ -6,16 +6,16 @@
 
 ## Installation
 
-    go get golang.org/x/net
-    go get golang.org/x/text
-    go get google.golang.org/grpc
-    go get github.com/go-sql-driver/mysql
-    go get github.com/golang/protobuf
-    go get github.com/mediocregopher/radix.v2
-    go get github.com/patrickmn/go-cache
-    go get github.com/mlaoji/ygo
-    go get github.com/mlaoji/yclient
-    go get github.com/mlaoji/yqueue
+    go get -u golang.org/x/net (https://github.com/golang/net)
+    go get -u golang.org/x/text (https://github.com/golang/text)
+    go get -u google.golang.org/grpc (https://github.com/grpc/grpc-go/)
+    go get -u github.com/go-sql-driver/mysql
+    go get -u github.com/golang/protobuf
+    go get -u github.com/mediocregopher/radix.v2
+    go get -u github.com/patrickmn/go-cache
+    go get -u github.com/mlaoji/ygo
+    go get -u github.com/mlaoji/yclient
+    go get -u github.com/mlaoji/yqueue
 
 ## Quick Start
 
