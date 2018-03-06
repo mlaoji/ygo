@@ -9,10 +9,12 @@
     go get -u golang.org/x/net (https://github.com/golang/net)
     go get -u golang.org/x/text (https://github.com/golang/text)
     go get -u google.golang.org/grpc (https://github.com/grpc/grpc-go/)
+    go get -u google.golang.org/genproto/googleapis/rpc/status  (https://github.com/google/go-genproto/blob/master/googleapis/rpc/status)
     go get -u github.com/go-sql-driver/mysql
     go get -u github.com/golang/protobuf
     go get -u github.com/mediocregopher/radix.v2
     go get -u github.com/patrickmn/go-cache
+    
     go get -u github.com/mlaoji/ygo
     go get -u github.com/mlaoji/yclient
     go get -u github.com/mlaoji/yqueue
