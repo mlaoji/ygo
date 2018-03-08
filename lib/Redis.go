@@ -473,12 +473,12 @@ func (this *RedisClient) Hmget(key string, fields interface{}) (val []string, er
 } // }}}
 
 // {{{ HgetAll
-func (this *RedisClient) HgetAll(key string) (val []string, err error) {
+func (this *RedisClient) HgetAll(key string) (val map[string]string, err error) {
 	c, err := this._pool.Get()
 	if err != nil {
 		return
 	}
-	val, err = c.Cmd("HGETALL", key).List()
+	val, err = c.Cmd("HGETALL", key).Map()
 	this._pool.Put(c)
 	return
 } // }}}

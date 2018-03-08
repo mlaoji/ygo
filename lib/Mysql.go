@@ -6,6 +6,7 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -288,8 +289,7 @@ func (this *MysqlClient) GetRow(_sql string, val ...interface{}) map[string]inte
 	return make(map[string]interface{}, 0)
 } // }}}
 
-//GetAll {{{
-func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]interface{} {
+func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]interface{} { //{{{
 	var start_time time.Time
 	if this.Debug {
 		start_time = time.Now()
@@ -300,6 +300,13 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 
 	if this.Debug {
 		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val})
+		if strings.HasPrefix(_sql, "select") {
+			expl_results := this.GetAll("explain "+_sql, val...)
+			expl := &MysqlExplain{expl_results}
+			expl.DrawConsole()
+		}
+
+		fmt.Println("")
 	}
 
 	if err != nil {

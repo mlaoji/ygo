@@ -73,7 +73,7 @@ func (this *Config) Load(configFile string) error {
 			key := parts[0]
 			value := parts[1]
 			//include json file
-			if value[0] == '<' && value[len(value)-1] == '>' {
+			if len(value) > 0 && value[0] == '<' && value[len(value)-1] == '>' {
 				includes := strings.SplitN(strings.TrimSpace(value[1:len(value)-1]), " ", 2)
 				if len(includes) == 2 && strings.EqualFold(includes[0], "include") {
 					this.jsonData[section][key], err = this.loadJson(includes[1])
