@@ -63,9 +63,8 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	this.prepare(r.Form, HTTP_MODE, requestUri)
 
-	//token保存在cookie中
-	//校验token是否有效，同时与参数中的userid一致
-	//优先取cookie中的userid, 不存在则使用url参数
+	//校验token是否有效
+	//优先使用cookie中的token 和 userid, 不存在则取Form参数
 
 	userId := this.GetInt("userid")
 	ck_userId := this.GetCookie("userid")
@@ -83,7 +82,11 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		token_key = "token"
 	}
 
-	token := this.GetCookie(token_key)
+	token := this.GetString(token_key)
+	ck_token := this.GetCookie(token_key)
+	if len(ck_token) > 0 {
+		token = ck_token
+	}
 
 	if len(token_secret) > 0 {
 		lib.TokenSecret = token_secret

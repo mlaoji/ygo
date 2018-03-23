@@ -49,7 +49,7 @@ func (this *Config) Load(configFile string) error {
 
 	for _, line := range lines {
 		line = strings.Trim(line, emptyRunes)
-		if line == "" || line[0] == '#' {
+		if line == "" || line[0] == '#' || (line[0] == '/' && line[1] == '/') {
 			continue
 		}
 

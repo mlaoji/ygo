@@ -259,6 +259,10 @@ func (this *DAOProxy) preParams(obj interface{}) map[string]interface{} {
 	return data
 } // }}}
 
+func (this *DAOProxy) Execute(sql string, params ...interface{}) int { //{{{
+	return this.DBWriter.Execute(sql, params...)
+} // }}}
+
 //AddRecord、SetRecord、ResetRecord 支持传入map[string]interface{} 和 struct 两种类型参数
 //AddRecord {{{
 func (this *DAOProxy) AddRecord(vals interface{}) int {
@@ -304,6 +308,14 @@ func (this *DAOProxy) DelRecord(id int) int {
 //DelRecordBy {{{
 func (this *DAOProxy) DelRecordBy(where string, params ...interface{}) int {
 	return this.DBWriter.Execute("delete from "+this.table+" where "+where+" limit 1", params...)
+} // }}}
+
+func (this *DAOProxy) GetOne(field, where string, params ...interface{}) interface{} { //{{{
+	if "" == where {
+		where = "1"
+	}
+
+	return this.DBReader.GetOne("select "+field+" from "+this.table+" where "+where, params...)
 } // }}}
 
 //GetCount {{{

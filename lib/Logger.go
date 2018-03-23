@@ -123,7 +123,7 @@ func (this *FileLogger) Debug(v ...interface{}) {
 
 	fmt.Printf("debug:")
 	for _, val := range v {
-		fmt.Printf("%#v", val)
+		fmt.Printf(" %#v ", val)
 	}
 	fmt.Println("")
 	this.writeLog(this.logName+"_debug", v...)
