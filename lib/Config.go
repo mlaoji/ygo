@@ -266,8 +266,10 @@ func (this *Config) GetJsonSlice(keys ...string) []string { // {{{
 	value := this.GetJson(keys...)
 
 	slice := []string{}
-	for _, v := range value.([]interface{}) {
-		slice = append(slice, AsString(v))
+	if newval, ok := value.([]interface{}); ok {
+		for _, v := range newval {
+			slice = append(slice, AsString(v))
+		}
 	}
 
 	return slice
@@ -277,8 +279,11 @@ func (this *Config) GetJsonSliceInt(keys ...string) []int { // {{{
 	value := this.GetJson(keys...)
 
 	slice := []int{}
-	for _, v := range value.([]interface{}) {
-		slice = append(slice, AsInt(v))
+
+	if newval, ok := value.([]interface{}); ok {
+		for _, v := range newval {
+			slice = append(slice, AsInt(v))
+		}
 	}
 
 	return slice
@@ -288,12 +293,14 @@ func (this *Config) GetJsonSliceMap(keys ...string) []map[string]string { // {{{
 	value := this.GetJson(keys...)
 
 	res := []map[string]string{}
-	for _, v := range value.([]interface{}) {
-		value := map[string]string{}
-		for k1, v1 := range v.(map[string]interface{}) {
-			value[k1] = AsString(v1)
+	if newval, ok := value.([]interface{}); ok {
+		for _, v := range newval {
+			value := map[string]string{}
+			for k1, v1 := range v.(map[string]interface{}) {
+				value[k1] = AsString(v1)
+			}
+			res = append(res, value)
 		}
-		res = append(res, value)
 	}
 
 	return res
@@ -303,8 +310,10 @@ func (this *Config) GetJsonMap(keys ...string) map[string]string { // {{{
 	value := this.GetJson(keys...)
 
 	res := map[string]string{}
-	for k, v := range value.(map[string]interface{}) {
-		res[k] = AsString(v)
+	if newval, ok := value.(map[string]interface{}); ok {
+		for k, v := range newval {
+			res[k] = AsString(v)
+		}
 	}
 
 	return res
@@ -314,8 +323,11 @@ func (this *Config) GetJsonMapInt(keys ...string) map[string]int { // {{{
 	value := this.GetJson(keys...)
 
 	res := map[string]int{}
-	for k, v := range value.(map[string]interface{}) {
-		res[k] = AsInt(v)
+
+	if newval, ok := value.(map[string]interface{}); ok {
+		for k, v := range newval {
+			res[k] = AsInt(v)
+		}
 	}
 
 	return res
