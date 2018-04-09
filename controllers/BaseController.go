@@ -471,6 +471,11 @@ func (this *BaseController) RenderError(err interface{}, data ...interface{}) { 
 		errno = errinfo.GetCode()
 		errmsg = errinfo.GetMessage()
 		isbizerr = true
+	case *lib.Errorf:
+		lang := this.GetString("lang")
+		errno = errinfo.GetCode()
+		errmsg = errinfo.GetMessage(lang)
+		isbizerr = true
 	case error:
 		errno = lib.ERR_SYSTEM.GetCode()
 		errmsg = errinfo.Error()

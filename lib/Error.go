@@ -1,6 +1,12 @@
 package lib
 
+import (
+	"fmt"
+)
+
 var (
+	//多语言时指定默认语言
+	DEFAULT_LANG = "CN"
 	//成功
 	ERR_SUC = &Error{0, "OK"}
 
@@ -18,12 +24,12 @@ var (
 	ERR_BAN            = &Error{110, "帐号被封禁"}
 
 	//业务级别，需要定义到业务代码中, 使用4位数字, 不同业务使用不同号段
-	//ERR_TopicNotExist = &Error{1101, "用户不存在: %s"}
+	//ERR_USER_NOT_EXIST = &Error{1101, "用户不存在: %s"}
 )
 
 type Error struct {
 	Code int
-	Msg  string
+	Msg  interface{}
 }
 
 func (this *Error) GetCode() int {
@@ -31,9 +37,53 @@ func (this *Error) GetCode() int {
 }
 
 func (this *Error) GetMessage() string {
-	return this.Msg
+	return fmt.Sprint(this.Msg)
 }
 
 func (this *Error) Error() string {
-	return this.Msg
+	return fmt.Sprint(this.Msg)
+}
+
+//格式化输出错误信息
+//用于 Interceptor 拦截抛错
+//国际化产品,多语言时，Msg 可以设置为map[string]string ,如:{"CN":"系统错误", "EN":"system error"}
+type Errorf struct {
+	Code int
+	Msg  interface{}
+	fmts []interface{}
+}
+
+func (this *Errorf) GetCode() int {
+	return this.Code
+}
+
+func (this *Errorf) GetMessage(langs ...string) string { // {{{
+	if msg, ok := this.Msg.(string); ok {
+		return fmt.Sprintf(msg, this.fmts...)
+	} else if global_msg, ok := this.Msg.(map[string]string); ok {
+		lang := ""
+		if len(langs) > 0 {
+			lang = langs[0]
+		}
+
+		if lang != "" {
+			if msg, ok := global_msg[lang]; ok {
+				return fmt.Sprintf(msg, this.fmts...)
+			}
+		}
+
+		if msg, ok := global_msg[DEFAULT_LANG]; ok {
+			return fmt.Sprintf(msg, this.fmts...)
+		}
+
+		for _, v := range global_msg {
+			return fmt.Sprintf(v, this.fmts...)
+		}
+	}
+
+	return fmt.Sprint(this.Msg)
+} // }}}
+
+func (this *Errorf) Error() string {
+	return fmt.Sprint(this.Msg)
 }

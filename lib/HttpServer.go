@@ -78,6 +78,8 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			switch errinfo := err.(type) {
 			case *Error:
 				errmsg = errinfo.GetMessage()
+			case *Errorf:
+				errmsg = errinfo.GetMessage()
 			case error:
 				errmsg = errinfo.Error()
 				log.Println(errmsg)

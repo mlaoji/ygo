@@ -37,6 +37,8 @@ func (this *CliServer) serveCli() {
 			switch errinfo := err.(type) {
 			case *Error:
 				errmsg = errinfo.GetMessage()
+			case *Errorf:
+				errmsg = errinfo.GetMessage()
 			case error:
 				errmsg = errinfo.Error()
 				fmt.Println(errmsg)
