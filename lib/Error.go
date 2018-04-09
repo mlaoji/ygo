@@ -51,6 +51,7 @@ type Errorf struct {
 	Code int
 	Msg  interface{}
 	fmts []interface{}
+	data map[string]interface{}
 }
 
 func (this *Errorf) GetCode() int {
@@ -58,6 +59,14 @@ func (this *Errorf) GetCode() int {
 }
 
 func (this *Errorf) GetMessage(langs ...string) string { // {{{
+	if len(this.fmts) > 0 {
+		if data, ok := this.fmts[len(this.fmts)-1].(map[string]interface{}); ok {
+			this.fmts = this.fmts[0 : len(this.fmts)-1]
+
+			this.data = data
+		}
+	}
+
 	if msg, ok := this.Msg.(string); ok {
 		return fmt.Sprintf(msg, this.fmts...)
 	} else if global_msg, ok := this.Msg.(map[string]string); ok {
@@ -84,6 +93,15 @@ func (this *Errorf) GetMessage(langs ...string) string { // {{{
 	return fmt.Sprint(this.Msg)
 } // }}}
 
+func (this *Errorf) GetData() map[string]interface{} {
+	if this.data == nil && len(this.fmts) > 0 {
+		if data, ok := this.fmts[len(this.fmts)-1].(map[string]interface{}); ok {
+			return data
+		}
+	}
+
+	return this.data
+}
 func (this *Errorf) Error() string {
 	return fmt.Sprint(this.Msg)
 }

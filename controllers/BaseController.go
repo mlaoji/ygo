@@ -458,10 +458,12 @@ func (this *BaseController) Render(data ...interface{}) { // {{{
 } // }}}
 
 //接口异常输出，在HttpApiServer中回调
-func (this *BaseController) RenderError(err interface{}, data ...interface{}) { // {{{
+func (this *BaseController) RenderError(err interface{}) { // {{{
 	var errno int
 	var errmsg string
 	var isbizerr bool
+
+	retdata := map[string]interface{}{}
 
 	switch errinfo := err.(type) {
 	case string:
@@ -475,6 +477,7 @@ func (this *BaseController) RenderError(err interface{}, data ...interface{}) { 
 		lang := this.GetString("lang")
 		errno = errinfo.GetCode()
 		errmsg = errinfo.GetMessage(lang)
+		retdata = errinfo.GetData()
 		isbizerr = true
 	case error:
 		errno = lib.ERR_SYSTEM.GetCode()
@@ -496,12 +499,7 @@ func (this *BaseController) RenderError(err interface{}, data ...interface{}) { 
 		}
 	}
 
-	var retdata interface{}
-	if len(data) > 0 {
-		retdata = data[0]
-	} else {
-		retdata = make(map[string]interface{})
-	}
+	//		retdata = make(map[string]interface{})
 
 	ret := map[string]interface{}{
 		"code":    errno,

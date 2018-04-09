@@ -18,7 +18,7 @@ import (
 
 func Interceptor(guard bool, errmsg *Error, fmts ...interface{}) {
 	if !guard {
-		panic(&Errorf{errmsg.Code, errmsg.Msg, fmts})
+		panic(&Errorf{errmsg.Code, errmsg.Msg, fmts, nil})
 	}
 }
 
