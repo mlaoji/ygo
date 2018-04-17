@@ -166,6 +166,18 @@ func (this *RedisClient) Exists(key string) (bool, error) {
 	return val == 1, nil
 } // }}}
 
+// {{{ Ttl
+func (this *RedisClient) Ttl(key string) (int, error) {
+	c, err := this._pool.Get()
+	if err != nil {
+		return 0, err
+	}
+	val := 0
+	val, err = c.Cmd("Ttl", key).Int()
+	this._pool.Put(c)
+	return val, nil
+} // }}}
+
 // {{{ incr
 func (this *RedisClient) Incr(key string) (val int, err error) {
 	c, err := this._pool.Get()
@@ -842,6 +854,18 @@ func (this *RedisClient) Sscan(key string, cursor, pattern, count interface{}) (
 		return nil, err
 	}
 	val, err = c.Cmd("SSCAN", key, cursor, "MATCH", pattern, "COUNT", count).List()
+	this._pool.Put(c)
+	return
+} // }}}
+
+//__call
+// {{{ Call
+func (this *RedisClient) Call(cmd string, args ...interface{}) (resp *redis.Resp, err error) {
+	c, err := this._pool.Get()
+	if err != nil {
+		return
+	}
+	resp = c.Cmd(cmd, args...)
 	this._pool.Put(c)
 	return
 } // }}}
