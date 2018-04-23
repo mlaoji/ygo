@@ -399,6 +399,26 @@ func (this *BaseController) GetIp() string { // {{{
 	return ip
 } // }}}
 
+func (this *BaseController) GetRequestUri() string { // {{{
+	if HTTP_MODE == this.mode && nil != this.R {
+		return fmt.Sprint(this.R.URL)
+	}
+
+	if RPC_MODE == this.mode && nil != this.IR {
+		return this.uri
+	}
+
+	return ""
+} // }}}
+
+func (this *BaseController) GetUA() string { // {{{
+	if HTTP_MODE == this.mode && nil != this.R {
+		return this.R.UserAgent()
+	}
+
+	return ""
+} // }}}
+
 func (this *BaseController) SetCookie(key, val string, lifetime int) { // {{{
 	cookie := &http.Cookie{
 		Name:     key,
@@ -463,7 +483,7 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 	var errmsg string
 	var isbizerr bool
 
-	retdata := map[string]interface{}{}
+	var retdata = make(map[string]interface{})
 
 	switch errinfo := err.(type) {
 	case string:
@@ -499,7 +519,9 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 		}
 	}
 
-	//		retdata = make(map[string]interface{})
+	if len(retdata) == 0 {
+		retdata = map[string]interface{}{}
+	}
 
 	ret := map[string]interface{}{
 		"code":    errno,
