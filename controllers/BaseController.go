@@ -51,6 +51,7 @@ type BaseController struct {
 	Controller string
 	Action     string
 	Debug      bool
+	tokenKey   string
 }
 
 func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, requestUri string) { // {{{
@@ -82,6 +83,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		token_key = "token"
 	}
 
+	this.tokenKey = token_key
 	token := this.GetString(token_key)
 	ck_token := this.GetCookie(token_key)
 	if len(ck_token) > 0 {
@@ -142,7 +144,12 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		}
 	}
 
-	secret := auth_conf["guid_secret"]
+	appid := this.GetString("appid")
+	secret, ok := auth_conf["guid_secret_"+appid]
+	if !ok {
+		secret = auth_conf["guid_secret"]
+	}
+
 	//if auth_conf["check_guid"] != "0" && -1 == strings.Index(uri, "monitor/") {
 	if auth_conf["check_guid"] == "1" && -1 == strings.Index(uri, "monitor/") {
 		api_need_check_guid_except := auth_conf["guid_api_except"]
@@ -579,6 +586,7 @@ func (this *BaseController) genLog() map[string]interface{} { // {{{
 		ret["uri"] = this.R.URL
 
 		if this.R.Method == "POST" {
+			delete(this.R.PostForm, this.tokenKey)
 			ret["post"] = this.R.PostForm
 		}
 

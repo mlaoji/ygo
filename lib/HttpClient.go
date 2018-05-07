@@ -10,21 +10,28 @@ import (
 )
 
 func NewHttpClient(timeouts ...int) *HttpClient {
-	timeout := 3
+	conn_timeout := 3
+	read_timeout := 5
 	if len(timeouts) > 0 {
-		timeout = timeouts[0]
+		conn_timeout = timeouts[0]
+		read_timeout = conn_timeout
+
+		if len(timeouts) > 1 {
+			read_timeout = timeouts[1]
+		}
 	}
+
 	client := &http.Client{
 		Transport: &http.Transport{
 			Dial: func(netw, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout(netw, addr, time.Second*time.Duration(timeout))
+				conn, err := net.DialTimeout(netw, addr, time.Second*time.Duration(conn_timeout))
 				if err != nil {
 					return nil, err
 				}
-				conn.SetDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+				conn.SetDeadline(time.Now().Add(time.Second * time.Duration(read_timeout)))
 				return conn, nil
 			},
-			ResponseHeaderTimeout: time.Second * time.Duration(timeout),
+			ResponseHeaderTimeout: time.Second * time.Duration(read_timeout),
 			DisableKeepAlives:     true,
 		},
 	}
