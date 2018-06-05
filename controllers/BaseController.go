@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/mlaoji/ygo/lib"
-	"html/template"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
@@ -43,9 +42,9 @@ type BaseController struct {
 	RBody      []byte
 	IR         *iRequest
 	UserId     int
-	Guid       string
+	Token      string
 	startTime  time.Time
-	mode       int
+	Mode       int
 	rpcContent string
 	uri        string
 	Controller string
@@ -53,6 +52,9 @@ type BaseController struct {
 	Debug      bool
 	tokenKey   string
 }
+
+//默认的初始化方法，可通过在项目中重写此方法实现公共入口方法
+func (this *BaseController) Init() {}
 
 func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, requestUri string) { // {{{
 	this.RW = rw
@@ -75,7 +77,6 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	auth_conf := lib.Conf.GetAll("auth_conf")
 	token_ttl := lib.ToInt(auth_conf["token_ttl"])
-	token_secret := auth_conf["token_secret"]
 	token_key := auth_conf["token_key"]
 	access_redirect := auth_conf["access_redirect"] //校验token失败时跳转
 
@@ -90,11 +91,14 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 		token = ck_token
 	}
 
+	this.Token = token
+
+	token_secret := lib.Conf.GetAll("token_secret_conf")
 	if len(token_secret) > 0 {
 		lib.TokenSecret = token_secret
 	}
 
-	logined := lib.CheckToken(token, userId, "", token_ttl)
+	logined, _ := lib.CheckToken(token, userId, "", token_ttl)
 
 	if logined {
 		this.UserId = userId
@@ -121,7 +125,7 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 					this.Redirect(access_redirect) //如果设置跳转URL，则直接跳转
 				}
 
-				lib.Interceptor(logined, lib.ERR_TOKEN, userId)
+				lib.Interceptor(logined, lib.ERR_TOKEN)
 			}
 		}
 	}
@@ -134,12 +138,8 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 				sign := this.GetCookie("sign")
 				ttl := lib.ToInt(auth_conf["sign_ttl"])
 
-				token_secret := auth_conf["token_secret"]
-				if len(token_secret) > 0 {
-					lib.TokenSecret = token_secret
-				}
-
-				lib.Interceptor(lib.CheckSign(sign, userId, ttl), lib.ERR_SIGN, userId)
+				validsign, _ := lib.CheckSign(sign, userId, ttl)
+				lib.Interceptor(validsign, lib.ERR_SIGN, userId)
 			}
 		}
 	}
@@ -225,7 +225,7 @@ func (this *BaseController) prepare(r url.Values, mode int, requestUri string) {
 	this.startTime = time.Now()
 	this.Debug = DEBUG_OPEN
 	this.IR = &iRequest{r}
-	this.mode = mode
+	this.Mode = mode
 	this.uri = strings.ToLower(requestUri)
 	uris := strings.Split(this.uri, "/")
 	this.Controller = uris[0]
@@ -407,11 +407,11 @@ func (this *BaseController) GetIp() string { // {{{
 } // }}}
 
 func (this *BaseController) GetRequestUri() string { // {{{
-	if HTTP_MODE == this.mode && nil != this.R {
+	if HTTP_MODE == this.Mode && nil != this.R {
 		return fmt.Sprint(this.R.URL)
 	}
 
-	if RPC_MODE == this.mode && nil != this.IR {
+	if RPC_MODE == this.Mode && nil != this.IR {
 		return this.uri
 	}
 
@@ -419,7 +419,7 @@ func (this *BaseController) GetRequestUri() string { // {{{
 } // }}}
 
 func (this *BaseController) GetUA() string { // {{{
-	if HTTP_MODE == this.mode && nil != this.R {
+	if HTTP_MODE == this.Mode && nil != this.R {
 		return this.R.UserAgent()
 	}
 
@@ -565,9 +565,9 @@ func (this *BaseController) Redirect(url string, codes ...int) { // {{{
 } // }}}
 
 func (this *BaseController) renderJson(data string) { // {{{
-	if this.mode == RPC_MODE {
+	if this.Mode == RPC_MODE {
 		this.rpcContent = data
-	} else if this.mode == CLI_MODE {
+	} else if this.Mode == CLI_MODE {
 		fmt.Println(data)
 	} else {
 		this.RW.Header().Set("Content-Type", "application/json;charset=UTF-8")
@@ -579,7 +579,7 @@ func (this *BaseController) renderJson(data string) { // {{{
 func (this *BaseController) genLog() map[string]interface{} { // {{{
 	ret := make(map[string]interface{})
 
-	if HTTP_MODE == this.mode && nil != this.R {
+	if HTTP_MODE == this.Mode && nil != this.R {
 		//访问ip
 		ret["ip"] = this.GetIp()
 		//请求路径
@@ -593,7 +593,7 @@ func (this *BaseController) genLog() map[string]interface{} { // {{{
 		ret["ua"] = this.R.UserAgent()
 	}
 
-	if RPC_MODE == this.mode && nil != this.IR {
+	if RPC_MODE == this.Mode && nil != this.IR {
 		delete(this.IR.Form, "secret")
 		ret["uri"] = this.uri
 		ret["post"] = this.IR.Form
@@ -614,13 +614,4 @@ func (this *BaseController) GetRpcContent() string {
 	return this.rpcContent
 }
 
-func (this *BaseController) RenderHtml(file string) {
-	t, err := template.New(file).ParseFiles("../static/views/" + file)
-	if err != nil {
-		this.Render(err.Error())
-		return
-	}
-	values := map[string]template.HTML{"html": template.HTML("<br/>")}
-
-	t.Execute(this.RW, values)
-}
+func (this *BaseController) RenderHtml(file string) {}

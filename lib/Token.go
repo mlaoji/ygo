@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -9,12 +10,15 @@ import (
 	"time"
 )
 
-var TokenSecret = ""
+//版本号:秘钥, 版本号固定1位
+var TokenSecret = map[string]string{
+	"1": "token_secret",
+}
+
+var TokenVer = "1" //固定1位, 当前下发token版本，更新secret时修改, 校验token时使用对应版本的secret
 
 const (
-	TOKEN_SECRET = "U4rnhBc9yruM"
-	TOKEN_TTL    = 604800 //86400 * 7
-	TOKEN_VER    = "1"    //固定1位, token版本，更新secret时修改
+	TOKEN_TTL = 604800 //86400 * 7
 )
 
 //国定1位，token权限范围，目前没实际意义,留为扩展
@@ -23,6 +27,14 @@ var TOKEN_SCOPE = map[string]string{
 	"app": "1",
 	"web": "2",
 }
+
+var (
+	ErrTokenFormat  = errors.New("wrong format")
+	ErrTokenSign    = errors.New("sign error")
+	ErrTokenUser    = errors.New("invalid userid")
+	ErrTokenSalt    = errors.New("invalid user salt")
+	ErrTokenExpired = errors.New("token expired")
+)
 
 //[18-26]位header + 8位随机 + 4位签名(最大39位，最小31位)
 //ttl 表示生成token 的时间戳，过期时间在校验时计算
@@ -64,7 +76,7 @@ func makeToken(uid int, salt string, ttl int, scope, random string, signflag int
 	binary.BigEndian.PutUint32(userid, uint32(uid))
 	binary.BigEndian.PutUint32(expire, uint32(ttl))
 
-	header := fmt.Sprintf("%x%x%s%s%s%d", userid, expire, salt, scope, TOKEN_VER, signflag)
+	header := fmt.Sprintf("%x%x%s%s%s%d", userid, expire, salt, scope, TokenVer, signflag)
 
 	/*
 		fmt.Printf("header:%s\n", header)
@@ -75,7 +87,9 @@ func makeToken(uid int, salt string, ttl int, scope, random string, signflag int
 		fmt.Printf("r:%s\n", random)
 	*/
 
-	sign := getSign(Concat(ToString(uid), ToString(ttl), salt, scope, TOKEN_VER, ToString(signflag), random))
+	secret := TokenSecret[TokenVer]
+
+	sign := getSign(Concat(ToString(uid), ToString(ttl), salt, scope, TokenVer, ToString(signflag), random), secret)
 	token := Concat(header, random, sign)
 
 	return strings.TrimLeft(token, "0")
@@ -83,9 +97,8 @@ func makeToken(uid int, salt string, ttl int, scope, random string, signflag int
 
 // }}}
 
-func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
+func getTokenInfo(token string) (ret map[string]interface{}, err error) { //{{{
 	ret = map[string]interface{}{}
-	err = false
 
 	header := ""
 	random_str := ""
@@ -96,13 +109,13 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 		random_str = string([]byte(token)[hlen-12 : hlen-4])
 		sign = string([]byte(token)[hlen-4:])
 	} else {
-		err = true
+		err = ErrTokenFormat
 		return
 	}
 
 	hlen := len(header)
 	if hlen < 19 {
-		err = true
+		err = ErrTokenFormat
 		return
 	}
 
@@ -120,6 +133,7 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 	binary.BigEndian.PutUint32(userid, uint32(_userid))
 	binary.BigEndian.PutUint32(expire, uint32(_expire))
 
+	secret, _ := TokenSecret[ver]
 	/*
 		fmt.Printf("header:%s\n", header)
 		fmt.Printf("uid:%x\n", string(userid))
@@ -128,17 +142,22 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 		fmt.Printf("salt:%s\n", salt)
 		fmt.Printf("ver:%s\n", ver)
 		fmt.Printf("r:%s\n", random_str)
+		fmt.Printf("secret:%s\n", secret)
 	*/
-
-	checksign := getSign(Concat(AsString(_userid), AsString(_expire), salt, scope, ver, signflag, random_str))
+	checksign := getSign(Concat(AsString(_userid), AsString(_expire), salt, scope, ver, signflag, random_str), secret)
 
 	/*
 		fmt.Printf("%#v", checksign)
 		fmt.Printf("%#v", sign)
 	*/
 
-	if checksign != sign || _userid == 0 || ver == "" || signflag == "" || scope == "" || random_str == "" || salt == "" {
-		err = true
+	if _userid == 0 || ver == "" || signflag == "" || scope == "" || random_str == "" || salt == "" {
+		err = ErrTokenFormat
+		return
+	}
+
+	if checksign != sign {
+		err = ErrTokenSign
 		return
 	}
 
@@ -159,48 +178,28 @@ func getTokenInfo(token string) (ret map[string]interface{}, err bool) { //{{{
 	return
 } // }}}
 
-func GetTokenInfo(token string, ttls ...int) (ret map[string]interface{}, err bool) { //{{{
+func GetTokenInfo(token string) (ret map[string]interface{}, err error) { //{{{
 	ret, err = getTokenInfo(token)
-	if err {
+	if nil != err {
 		return
 	}
 
 	if ret["signflag"].(int) > 4 {
-		err = true
-		return
-	}
-
-	ttl := TOKEN_TTL
-	if len(ttls) > 0 && ttls[0] > 0 {
-		ttl = ttls[0]
-	}
-
-	if ret["time"].(int)+ttl < int(time.Now().Unix()) {
-		err = true
+		err = ErrTokenFormat
 		return
 	}
 
 	return
 } // }}}
 
-func GetSignInfo(sign string, ttls ...int) (ret map[string]interface{}, err bool) { //{{{
+func GetSignInfo(sign string) (ret map[string]interface{}, err error) { //{{{
 	ret, err = getTokenInfo(sign)
-	if err {
+	if nil != err {
 		return
 	}
 
 	if ret["signflag"].(int) < 5 {
-		err = true
-		return
-	}
-
-	ttl := TOKEN_TTL
-	if len(ttls) > 0 && ttls[0] > 0 {
-		ttl = ttls[0]
-	}
-
-	if ret["time"].(int)+ttl < int(time.Now().Unix()) {
-		err = true
+		err = ErrTokenFormat
 		return
 	}
 
@@ -208,36 +207,14 @@ func GetSignInfo(sign string, ttls ...int) (ret map[string]interface{}, err bool
 } // }}}
 
 //加强校验时，需要传salt
-func CheckToken(token string, userid int, salt string, ttls ...int) bool { //{{{
+func CheckToken(token string, userid int, salt string, ttls ...int) (bool, error) { //{{{
 	tokeninfo, err := GetTokenInfo(token)
-	if err {
-		return false
-	}
-
-	ttl := TOKEN_TTL
-	if len(ttls) > 0 && ttls[0] > 0 {
-		ttl = ttls[0]
-	}
-
-	if tokeninfo["time"].(int)+ttl < int(time.Now().Unix()) {
-		return false
+	if nil != err {
+		return false, err
 	}
 
 	if tokeninfo["userid"].(int) != userid || userid == 0 {
-		return false
-	}
-
-	if "" != salt && tokeninfo["salt"].(string) != getSalt(salt) {
-		return false
-	}
-
-	return true
-} // }}}
-
-func CheckSign(sign string, userid int, ttls ...int) bool { //{{{
-	tokeninfo, err := GetSignInfo(sign)
-	if err {
-		return false
+		return false, ErrTokenUser
 	}
 
 	ttl := TOKEN_TTL
@@ -246,21 +223,41 @@ func CheckSign(sign string, userid int, ttls ...int) bool { //{{{
 	}
 
 	if tokeninfo["time"].(int)+ttl < int(time.Now().Unix()) {
-		return false
+		return false, ErrTokenExpired
+	}
+
+	if "" != salt && tokeninfo["salt"].(string) != getSalt(salt) {
+		return false, ErrTokenSalt
+	}
+
+	return true, nil
+} // }}}
+
+func CheckSign(sign string, userid int, ttls ...int) (bool, error) { //{{{
+	tokeninfo, err := GetSignInfo(sign)
+	if nil != err {
+		return false, err
 	}
 
 	if tokeninfo["userid"].(int) != userid {
-		return false
+		return false, ErrTokenUser
 	}
 
-	return true
+	ttl := TOKEN_TTL
+	if len(ttls) > 0 && ttls[0] > 0 {
+		ttl = ttls[0]
+	}
+
+	if tokeninfo["time"].(int)+ttl < int(time.Now().Unix()) {
+		return false, ErrTokenExpired
+	}
+
+	return true, nil
 } // }}}
 
-//GetTokenBySign{{{
-func GetTokenBySign(sign string) (token string, err bool) {
-	tokeninfo, _err := GetSignInfo(sign)
-	if _err {
-		err = true
+func GetTokenBySign(sign string) (token string, err error) { //{{{
+	tokeninfo, err := GetSignInfo(sign)
+	if nil != err {
 		return
 	}
 
@@ -275,12 +272,7 @@ func GetTokenBySign(sign string) (token string, err bool) {
 	return
 } // }}}
 
-func getSign(str string) string { // {{{
-	secret := TokenSecret
-	if "" == secret {
-		secret = TOKEN_SECRET
-	}
-
+func getSign(str, secret string) string { // {{{
 	sign := MD5(str + secret)
 	return string([]byte(sign)[5:9])
 } // }}}

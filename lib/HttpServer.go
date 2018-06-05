@@ -169,6 +169,11 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	method = vc.MethodByName("Prepare")
 	method.Call(in)
 
+	//call Init method if exists
+	in = make([]reflect.Value, 0)
+	method = vc.MethodByName("Init")
+	method.Call(in)
+
 	in = make([]reflect.Value, 0)
 	method = vc.MethodByName(mname)
 	method.Call(in)
