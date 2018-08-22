@@ -315,6 +315,11 @@ func (this *DAOProxy) DelRecordBy(where string, params ...interface{}) int {
 	return this.DBWriter.Execute("delete from "+this.table+" where "+where+" limit 1", params...)
 } // }}}
 
+//DelRecords {{{ Is Dangerous!
+func (this *DAOProxy) DelRecords(where string, params ...interface{}) int {
+	return this.DBWriter.Execute("delete from "+this.table+" where "+where, params...)
+} // }}}
+
 func (this *DAOProxy) GetOne(field, where string, params ...interface{}) interface{} { //{{{
 	if "" == where {
 		where = "1"
