@@ -31,7 +31,9 @@ func (this *MysqlProxy) Add(conf_name string) { // {{{
 		moc, _ := strconv.Atoi(conf["max_open_conns"])
 		mic, _ := strconv.Atoi(conf["max_idle_conns"])
 		dbg, _ := strconv.ParseBool(conf["debug"])
+		id := string([]byte(MD5(conf_name))[1:8])
 		my := &MysqlClient{
+			ID:           id,
 			Host:         conf["host"],
 			User:         conf["user"],
 			Password:     conf["password"],
@@ -45,7 +47,7 @@ func (this *MysqlProxy) Add(conf_name string) { // {{{
 		my.Init()
 
 		this.c[conf_name] = my
-		fmt.Println("add mysql :" + conf_name + "[" + conf["host"] + "]")
+		fmt.Println("add mysql :" + conf_name + "[" + conf["host"] + "] #ID:" + id)
 	}
 } // }}}
 
@@ -75,6 +77,7 @@ type txExecutor struct {
 }
 
 type MysqlClient struct {
+	ID           string
 	Host         string
 	User         string
 	Password     string
@@ -163,7 +166,7 @@ func (this *MysqlClient) GetOne(_sql string, val ...interface{}) interface{} {
 
 	err = this.executor.QueryRow(_sql, val...).Scan(&name)
 	if this.Debug {
-		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val})
+		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
 	}
 
 	if err != nil {
@@ -269,7 +272,7 @@ func (this *MysqlClient) execute(_sql string, val ...interface{}) (result sql.Re
 	result, err := this.executor.Exec(_sql, val...)
 
 	if this.Debug {
-		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val})
+		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
 	}
 
 	if err != nil {
@@ -299,7 +302,7 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 	rows, err := this.executor.Query(_sql, val...)
 
 	if this.Debug {
-		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val})
+		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
 		if strings.HasPrefix(_sql, "select") {
 			expl_results := this.GetAll("explain "+_sql, val...)
 			expl := &MysqlExplain{expl_results}

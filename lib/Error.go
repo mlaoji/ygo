@@ -17,7 +17,7 @@ var (
 	ERR_GUID           = &Error{103, "签名不合法: %+v"}
 	ERR_FLOOD          = &Error{104, "不能重复请求: %+v"}
 	ERR_FREQ           = &Error{105, "接口访问过于频繁: %+v"}
-	ERR_TOKEN          = &Error{106, "您的登录已过期或在其他设备登录,请重新登录"}
+	ERR_TOKEN          = &Error{106, "您的登录已过期,请重新登录"}
 	ERR_SIGN           = &Error{107, "令牌[sign]不正确:%+v"}
 	ERR_RPCAUTH        = &Error{108, "rpc认证失败:%+v"}
 	ERR_OTHER          = &Error{109, "%+v"}

@@ -15,9 +15,12 @@ type DAOProxy struct {
 	DBWriter, DBReader *lib.MysqlClient
 	table              string
 	primary            string
-	fields             string //字段,逗号分隔
+	defaultFields      string //默认字段,逗号分隔
+	fields             string //通过setFields方法指定的字段,逗号分隔,只能通过getFields使用一次
+	countField         string //getCount方法使用的字段
+	index              string //查询使用的索引
+	forceMaster        bool   //强制使用主库读，只能通过useMaster 使用一次
 	bind               interface{}
-	countField         string //count字段
 }
 
 func (this *DAOProxy) Init(conf ...string) { //{{{
@@ -36,17 +39,17 @@ func (this *DAOProxy) Init(conf ...string) { //{{{
 	slave_confs := lib.Conf.GetSlice("slaves", ",", slave_conf)
 	if len(slave_confs) > 0 {
 		rand.Seed(int64(time.Now().Nanosecond()))
-		index := rand.Intn(len(slave_confs))
-		slave_conf = slave_confs[index]
+		idx := rand.Intn(len(slave_confs))
+		slave_conf = slave_confs[idx]
 	}
 
-	this.fields = "*"
+	this.defaultFields = "*"
 	this.DBWriter = lib.Mysql.Get(master_conf)
 	this.DBReader = lib.Mysql.Get(slave_conf)
 } // }}}
 
 func (this *DAOProxy) InitTx(tx *lib.MysqlClient) { //使用事务{{{
-	this.fields = "*"
+	this.defaultFields = "*"
 	this.DBWriter = tx
 	this.DBReader = tx
 } // }}}
@@ -67,19 +70,69 @@ func (this *DAOProxy) GetPrimary() string {
 	return this.primary
 }
 
-func (this *DAOProxy) SetCountField(field string) {
+func (this *DAOProxy) SetCountField(field string) *DAOProxy {
 	this.countField = field
+	return this
 }
 
-func (this *DAOProxy) SetFields(fields string) {
+func (this *DAOProxy) GetCountField() string {
+	field := "1"
+	if "" != this.countField {
+		field = this.countField
+		this.countField = ""
+	}
+
+	return field
+}
+
+func (this *DAOProxy) SetDefaultFields(fields string) *DAOProxy {
+	this.defaultFields = fields
+	return this
+}
+
+//可在读方法前使用，且仅对本次查询起作用，如: NewDAOUser().SetFields("uid").GetRecord(uid)
+func (this *DAOProxy) SetFields(fields string) *DAOProxy {
 	this.fields = fields
+	return this
 }
 
 func (this *DAOProxy) GetFields() string {
-	return this.fields
+	fields := this.defaultFields
+	if "" != this.fields {
+		fields = this.fields
+		this.fields = ""
+	}
+
+	return fields
+}
+
+func (this *DAOProxy) UseIndex(idx string) *DAOProxy {
+	this.index = idx
+	return this
+}
+
+func (this *DAOProxy) UseMaster(flag ...bool) *DAOProxy {
+	use := true
+	if len(flag) > 0 {
+		use = flag[0]
+	}
+
+	this.forceMaster = use
+	return this
+}
+
+func (this *DAOProxy) GetDBReader() *lib.MysqlClient {
+	if this.forceMaster {
+		this.forceMaster = false
+
+		return this.DBWriter
+	}
+
+	return this.DBReader
 }
 
 //必须为指针 单条记录指向 struct , 多条记录指向[]struct 或 []*struct
+//使用: NewDAOUser().bind([]struct).GetRecords(...
 func (this *DAOProxy) Bind(objPtr interface{}) *DAOProxy { // {{{
 	if reflect.ValueOf(objPtr).Kind() != reflect.Ptr {
 		panic("needs a pointer to a slice or a struct")
@@ -291,11 +344,7 @@ func (this *DAOProxy) ResetRecord(vals interface{}) int {
 
 //GetRecord {{{
 func (this *DAOProxy) GetRecord(id int) map[string]interface{} {
-	if "" == this.fields {
-		this.fields = "*"
-	}
-
-	row := this.DBReader.GetRow("select "+this.fields+" from "+this.table+" where "+this.primary+"=?", id)
+	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+this.primary+"=?", id)
 
 	if len(row) > 0 && nil != this.bind {
 		this.parseRecord(row)
@@ -325,20 +374,21 @@ func (this *DAOProxy) GetOne(field, where string, params ...interface{}) interfa
 		where = "1"
 	}
 
-	return this.DBReader.GetOne("select "+field+" from "+this.table+" where "+where, params...)
+	return this.GetDBReader().GetOne("select "+field+" from "+this.table+" where "+where, params...)
 } // }}}
 
 //GetCount {{{
 func (this *DAOProxy) GetCount(where string, params ...interface{}) int {
-	if "" == this.countField {
-		this.countField = this.primary
+	idx := ""
+	if "" != this.index {
+		idx = " force key(" + this.index + ") "
 	}
 
 	if "" == where {
 		where = "1"
 	}
 
-	total, _ := strconv.Atoi(this.DBReader.GetOne("select count("+this.countField+") as total from "+this.table+" where "+where, params...).(string))
+	total, _ := strconv.Atoi(this.GetDBReader().GetOne("select count("+this.GetCountField()+") as total from "+this.table+idx+" where "+where, params...).(string))
 
 	return total
 } // }}}
@@ -355,11 +405,7 @@ func (this *DAOProxy) ExistsBy(where string, params ...interface{}) bool {
 
 //GetRecordBy {{{
 func (this *DAOProxy) GetRecordBy(where string, params ...interface{}) map[string]interface{} {
-	if "" == this.fields {
-		this.fields = "*"
-	}
-
-	row := this.DBReader.GetRow("select "+this.fields+" from "+this.table+" where "+where, params...)
+	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+where, params...)
 
 	if len(row) > 0 && nil != this.bind {
 		this.parseRecord(row)
@@ -370,8 +416,9 @@ func (this *DAOProxy) GetRecordBy(where string, params ...interface{}) map[strin
 
 //GetRecords {{{
 func (this *DAOProxy) GetRecords(where string, start, num int, order string, params ...interface{}) []map[string]interface{} {
-	if "" == this.fields {
-		this.fields = "*"
+	idx := ""
+	if "" != this.index {
+		idx = " force key(" + this.index + ") "
 	}
 
 	if "" == where {
@@ -386,7 +433,7 @@ func (this *DAOProxy) GetRecords(where string, start, num int, order string, par
 		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
 	}
 
-	list := this.DBReader.GetAll("select "+this.fields+" from "+this.table+" where "+where, params...)
+	list := this.GetDBReader().GetAll("select "+this.GetFields()+" from "+this.table+idx+" where "+where, params...)
 
 	if len(list) > 0 && nil != this.bind {
 		this.parseRecords(list)
