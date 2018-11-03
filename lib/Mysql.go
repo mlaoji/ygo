@@ -90,6 +90,7 @@ type MysqlClient struct {
 	intx         bool
 	tx           *sql.Tx
 	executor     Executor
+	p            *MysqlClient //实际上没什么用，只在事务中打印调式信息时使用(因为在事务中执行explain语句会出现'busy buffer'的错误)
 }
 
 //Init {{{
@@ -125,12 +126,19 @@ func (this *MysqlClient) Begin() *MysqlClient { // {{{
 	if err != nil {
 		panic(fmt.Sprintf("mysql trans error:%v", err))
 	}
+
+	if this.Debug {
+		Logger.Debug("Begin transaction on #ID:", this.ID)
+	}
+
 	return &MysqlClient{
+		ID:       this.ID,
 		db:       this.db,
 		executor: &txExecutor{tx},
 		tx:       tx,
 		intx:     true,
 		Debug:    this.Debug,
+		p:        this,
 	}
 } // }}}
 
@@ -141,6 +149,11 @@ func (this *MysqlClient) Rollback() { // {{{
 		if err != nil {
 			panic(fmt.Sprintf("mysql trans rollback error:%v", err))
 		}
+
+		if this.Debug {
+			Logger.Debug("Rollback transaction on #ID:", this.ID)
+		}
+
 	}
 } // }}}
 
@@ -151,6 +164,11 @@ func (this *MysqlClient) Commit() { // {{{
 		if err != nil {
 			panic(fmt.Sprintf("mysql trans commit error:%v", err))
 		}
+
+		if this.Debug {
+			Logger.Debug("Commit transaction on #ID:", this.ID)
+		}
+
 	}
 } // }}}
 
@@ -304,7 +322,12 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 	if this.Debug {
 		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
 		if strings.HasPrefix(_sql, "select") {
-			expl_results := this.GetAll("explain "+_sql, val...)
+			expl_results := []map[string]interface{}{}
+			if this.intx {
+				expl_results = this.p.GetAll("explain "+_sql, val...)
+			} else {
+				expl_results = this.GetAll("explain "+_sql, val...)
+			}
 			expl := &MysqlExplain{expl_results}
 			expl.DrawConsole()
 		}

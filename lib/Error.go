@@ -103,5 +103,5 @@ func (this *Errorf) GetData() map[string]interface{} {
 	return this.data
 }
 func (this *Errorf) Error() string {
-	return fmt.Sprint(this.Msg)
+	return this.GetMessage()
 }
