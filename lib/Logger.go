@@ -30,7 +30,7 @@ const (
 type FileLogger struct {
 	loggerMap map[string]*log.Logger
 	fdMap     map[string]*os.File
-	curDate   string
+	curDate   map[string]string
 	rootPath  string
 	logName   string
 	logLevel  int
@@ -40,7 +40,7 @@ type FileLogger struct {
 func (this *FileLogger) Init(rootPath, logName string, logLevel int) {
 	this.rootPath = rootPath
 	this.logName = logName
-	this.curDate = time.Now().Format("20060102")
+	this.curDate = make(map[string]string)
 	this.loggerMap = make(map[string]*log.Logger)
 	this.fdMap = make(map[string]*os.File)
 	this.logLevel = logLevel
@@ -54,14 +54,16 @@ func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 	this.lock.RLock()
 	retLogger, ok := this.loggerMap[logName]
 	fd, ok := this.fdMap[logName]
-	if !ok || nowDate != this.curDate {
+	curDate, ok := this.curDate[logName]
+	if !ok || nowDate != curDate {
 		this.lock.RUnlock()
 		this.lock.Lock()
 		defer this.lock.Unlock()
 
 		fd, ok = this.fdMap[logName]
+		curDate, ok = this.curDate[logName]
 		//双重判断，减少抢锁
-		if !ok || nowDate != this.curDate {
+		if !ok || nowDate != curDate {
 			if fd != nil {
 				fd.Close()
 			}
@@ -73,7 +75,7 @@ func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 			fd.Chmod(0777)
 			this.loggerMap[logName] = log.New(fd, "", 0)
 			this.fdMap[logName] = fd
-			this.curDate = nowDate
+			this.curDate[logName] = nowDate
 			fmt.Println("new logger:", filePath)
 
 			retLogger = this.loggerMap[logName]
