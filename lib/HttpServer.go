@@ -98,7 +98,20 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		if u, err := url.Parse(ref); nil == err {
 			cors_domain := Conf.Get("cors_domain")
 			if len(cors_domain) > 0 {
+				allowed := false
 				if "*" == cors_domain || strings.Contains(","+cors_domain+",", ","+u.Host+",") {
+					allowed = true
+				} else if strings.Contains(","+cors_domain, ",*.") {
+					domains := strings.Split(cors_domain, ",")
+					for _, v := range domains {
+						if v[0] == '*' && strings.Contains(u.Host+",", string(v[1:])+",") {
+							allowed = true
+							break
+						}
+					}
+				}
+
+				if allowed {
 					rw.Header().Set("Access-Control-Allow-Origin", u.Scheme+"://"+u.Host)
 					rw.Header().Set("Access-Control-Allow-Credentials", "true")
 				}
