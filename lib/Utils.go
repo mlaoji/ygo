@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+//捕获异常时，可同时返回data(通过fmts参数最后一个类型为map的值)
 func Interceptor(guard bool, errmsg *Error, fmts ...interface{}) {
 	if !guard {
 		panic(&Errorf{errmsg.Code, errmsg.Msg, fmts, nil})
@@ -73,7 +74,10 @@ func convertFloat(r interface{}) interface{} { // {{{
 		}
 		return s
 	case float64:
-		return int(val)
+		if float64(int(val)) == val {
+			return int(val)
+		}
+		return val
 	default:
 		return r
 	}
@@ -289,7 +293,7 @@ func mkTime(loc *time.Location, t ...int) int { // {{{
 	if l > 5 {
 		y = t[5]
 	} else {
-		tn := time.Now()
+		tn := time.Now().In(loc)
 		y = tn.Year()
 		if l < 5 {
 			d = tn.Day()
@@ -324,7 +328,7 @@ func Cost(start_time time.Time) int { //start_time=time.Now()
 	return int(time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000)
 }
 
-func AsInt(num interface{}) int { // {{{
+func AsInt(num interface{}, def ...int) int { // {{{
 	if val, ok := num.(int); ok {
 		return val
 	}
@@ -334,15 +338,25 @@ func AsInt(num interface{}) int { // {{{
 		val = fmt.Sprint(num)
 	}
 
-	return ToInt(val)
-} // }}}
-
-func AsString(str interface{}) string { // {{{
-	if nil == str {
-		return ""
+	numint := ToInt(val)
+	if numint == 0 && len(def) > 0 {
+		numint = def[0]
 	}
 
-	return fmt.Sprint(str)
+	return numint
+} // }}}
+
+func AsString(str interface{}, def ...string) string { // {{{
+	newstr := ""
+	if nil != str {
+		newstr = fmt.Sprint(str)
+	}
+
+	if newstr == "" && len(def) > 0 {
+		newstr = def[0]
+	}
+
+	return newstr
 } // }}}
 
 func ToInt(num string) int { // {{{
