@@ -333,6 +333,14 @@ func AsInt(num interface{}, def ...int) int { // {{{
 		return val
 	}
 
+	if val, ok := num.(float64); ok {
+		return int(val)
+	}
+
+	if val, ok := num.(float32); ok {
+		return int(val)
+	}
+
 	val, ok := num.(string)
 	if !ok {
 		val = fmt.Sprint(num)
