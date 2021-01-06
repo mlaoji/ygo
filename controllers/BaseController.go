@@ -19,15 +19,17 @@ type iRequest struct {
 	Form url.Values
 }
 
-func (this *iRequest) FormValue(key string) string {
-	if vs := this.Form[key]; len(vs) > 0 {
+func (i *iRequest) FormValue(key string) string {
+	if vs := i.Form[key]; len(vs) > 0 {
 		return vs[0]
 	}
 	return ""
 }
 
 var (
-	DEBUG_OPEN = false
+	DEBUG      = false
+	LOG_ACCESS = true
+	LOG_ERROR  = true
 )
 
 const (
@@ -37,26 +39,25 @@ const (
 )
 
 type BaseController struct {
-	RW         http.ResponseWriter
-	R          *http.Request
-	RBody      []byte
-	IR         *iRequest
-	UserId     int
-	Token      string
-	startTime  time.Time
-	Mode       int
-	rpcContent string
-	uri        string
-	Controller string
-	Action     string
-	Debug      bool
-	tokenKey   string
+	RW            http.ResponseWriter
+	R             *http.Request
+	RBody         []byte
+	IR            *iRequest
+	startTime     time.Time
+	Mode          int
+	rpcContent    string
+	Controller    string
+	Action        string
+	Uri           string
+	Debug         bool
+	logParams     map[string]interface{} //需要额外记录在日志中的参数
+	logOmitParams []string               //不希望记录在日志中的参数
 }
 
 //默认的初始化方法，可通过在项目中重写此方法实现公共入口方法
 func (this *BaseController) Init() {}
 
-func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, requestUri string) { // {{{
+func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, controller, action string) { // {{{
 	this.RW = rw
 	this.R = r
 
@@ -64,115 +65,16 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, req
 
 	r.ParseMultipartForm(32 << 20) //32M
 
-	this.prepare(r.Form, HTTP_MODE, requestUri)
+	this.prepare(r.Form, HTTP_MODE, controller, action)
 
-	//校验token是否有效
-	//优先使用cookie中的token 和 userid, 不存在则取Form参数
-
-	userId := this.GetInt("userid")
-	ck_userId := this.GetCookie("userid")
-	if len(ck_userId) > 0 {
-		userId = lib.ToInt(ck_userId)
-	}
-
-	auth_conf := lib.Conf.GetAll("auth_conf")
-	token_ttl := lib.ToInt(auth_conf["token_ttl"])
-	token_key := auth_conf["token_key"]
-	access_redirect := auth_conf["access_redirect"] //校验token失败时跳转
-
-	if 0 == len(token_key) {
-		token_key = "token"
-	}
-
-	this.tokenKey = token_key
-	token := this.GetString(token_key)
-	ck_token := this.GetCookie(token_key)
-	if len(ck_token) > 0 {
-		token = ck_token
-	}
-
-	this.Token = token
-
-	token_secret := lib.Conf.GetAll("token_secret_conf")
-	if len(token_secret) > 0 {
-		lib.TokenSecret = token_secret
-	}
-
-	logined, _ := lib.CheckToken(token, userId, "", token_ttl)
-
-	if logined {
-		this.UserId = userId
-	}
-
-	uri := this.uri
-	//需要校验token的接口在配置中定义
-	if auth_conf["check_token"] == "1" && -1 == strings.Index(uri, "monitor/") { //默认关闭
-		api_need_check_token_except := auth_conf["token_api_except"]
-		if "" == api_need_check_token_except || !strings.Contains(","+strings.ToLower(api_need_check_token_except)+",", ","+uri+",") {
-			api_need_check_token := "," + strings.ToLower(auth_conf["token_api"]) + ","
-			if api_need_check_token == ",," || strings.Contains(api_need_check_token, ",*,") || strings.Contains(api_need_check_token, ","+uri+",") {
-				if len(access_redirect) > 0 && !logined {
-					if strings.Contains(access_redirect, "?") {
-						access_redirect += "&"
-					} else {
-						access_redirect += "?"
-					}
-
-					access_redirect += "http_referer=" + url.QueryEscape(this.GetHeader("Referer"))
-					access_redirect += "&request_controller=" + this.Controller
-					access_redirect += "&request_action=" + this.Action
-					access_redirect += "&request_uri=" + url.QueryEscape(this.R.URL.String())
-					this.Redirect(access_redirect) //如果设置跳转URL，则直接跳转
-				}
-
-				lib.Interceptor(logined, lib.ERR_TOKEN)
-			}
-		}
-	}
-	//需要校验sign的接口在配置中定义
-	if auth_conf["check_sign"] == "1" && -1 == strings.Index(uri, "monitor/") { //默认关闭
-		api_need_check_sign_except := auth_conf["sign_api_except"]
-		if "" == api_need_check_sign_except || !strings.Contains(","+strings.ToLower(api_need_check_sign_except)+",", ","+uri+",") {
-			api_need_check_sign := "," + strings.ToLower(auth_conf["sign_api"]) + ","
-			if api_need_check_sign == ",," || strings.Contains(api_need_check_sign, ",*,") || strings.Contains(api_need_check_sign, ","+uri+",") {
-				sign := this.GetCookie("sign")
-				ttl := lib.ToInt(auth_conf["sign_ttl"])
-
-				validsign, _ := lib.CheckSign(sign, userId, ttl)
-				lib.Interceptor(validsign, lib.ERR_SIGN, userId)
-			}
-		}
-	}
-
-	appid := this.GetString("appid")
-	secret, ok := auth_conf["guid_secret_"+appid]
-	if !ok {
-		secret = auth_conf["guid_secret"]
-	}
-
-	//if auth_conf["check_guid"] != "0" && -1 == strings.Index(uri, "monitor/") {
-	if auth_conf["check_guid"] == "1" && -1 == strings.Index(uri, "monitor/") {
-		api_need_check_guid_except := auth_conf["guid_api_except"]
-		if "" == api_need_check_guid_except || !strings.Contains(","+strings.ToLower(api_need_check_guid_except)+",", ","+uri+",") {
-			api_need_check_guid := "," + strings.ToLower(auth_conf["guid_api"]) + ","
-			if api_need_check_guid == ",," || strings.Contains(api_need_check_guid, ",*,") || strings.Contains(api_need_check_guid, ","+uri+",") {
-				guid := this.GetString("guid")
-				field := lib.Conf.GetSlice("guid_field", ",", "auth_conf")
-
-				lib.Interceptor(lib.CheckGuid(r.Form, secret, field), lib.ERR_GUID, guid)
-				lib.Interceptor(lib.CheckFlood(guid), lib.ERR_FLOOD, guid)
-			}
-		}
-	}
-
+	//api 接口频度控制
 	freq_conf := lib.Conf.GetAll("api_freq_conf")
 	if freq_conf["check_freq"] == "1" { //默认关闭
-		mtd := this.uri
-		mtd_cnf := lib.Conf.GetSlice(mtd, ",", "api_freq_conf")
+		mtd_cnf := lib.Conf.GetSlice("api_freq_conf", this.Uri)
 		for _, freq_rule := range mtd_cnf {
-			whitelist := lib.Conf.GetSlice(freq_rule+"_whitelist", ",", "api_freq_conf")
-			blacklist := lib.Conf.GetSlice(freq_rule+"_blacklist", ",", "api_freq_conf")
-			freq_rule_conf := lib.Conf.GetSlice(freq_rule, ",", "api_freq_conf")
+			whitelist := lib.Conf.GetSlice("api_freq_conf", freq_rule+"_whitelist")
+			blacklist := lib.Conf.GetSlice("api_freq_conf", freq_rule+"_blacklist")
+			freq_rule_conf := lib.Conf.GetSlice("api_freq_conf", freq_rule)
 			if len(freq_rule_conf) > 2 {
 				freq := lib.NewRestrict(freq_rule, lib.ToInt(freq_rule_conf[0]), lib.ToInt(freq_rule_conf[1])) //规则,频率,周期(秒)
 				if len(whitelist) > 0 {
@@ -209,37 +111,32 @@ func (this *BaseController) getRequestBody(r *http.Request) ([]byte, error) { //
 	return buf, nil
 } // }}}
 
-func (this *BaseController) PrepareRpc(r url.Values, requestUri string) { // {{{
-	this.prepare(r, RPC_MODE, requestUri)
+func (this *BaseController) PrepareRpc(r url.Values, controller, action string) { // {{{
+	this.prepare(r, RPC_MODE, controller, action)
 
+	//rpc 接口鉴权
 	appid := this.GetString("appid")
 	secret := this.GetString("secret")
-	lib.Interceptor(lib.CheckRpcAuth(appid, secret), lib.ERR_RPCAUTH, appid)
+	lib.Interceptor(secret == lib.Conf.Get("rpc_auth", "app_"+appid), lib.ERR_RPCAUTH, appid)
 } // }}}
 
-func (this *BaseController) PrepareCli(r url.Values, requestUri string) { // {{{
-	this.prepare(r, CLI_MODE, requestUri)
+func (this *BaseController) PrepareCli(r url.Values, controller, action string) { // {{{
+	this.prepare(r, CLI_MODE, controller, action)
 } // }}}
 
-func (this *BaseController) prepare(r url.Values, mode int, requestUri string) { // {{{
+func (this *BaseController) prepare(r url.Values, mode int, controller, action string) { // {{{
 	this.startTime = time.Now()
-	this.Debug = DEBUG_OPEN
+	this.Debug = DEBUG
 	this.IR = &iRequest{r}
 	this.Mode = mode
-	this.uri = strings.ToLower(requestUri)
-	uris := strings.Split(this.uri, "/")
-	this.Controller = uris[0]
-	this.Action = uris[1]
+	this.Controller = controller
+	this.Action = action
+	this.Uri = strings.ToLower(controller + "/" + action)
 } // }}}
 
 //以下 GetX 方法用于获取参数
 func (this *BaseController) GetCookie(key string) string { // {{{
-	cookie, err := this.R.Cookie(key)
-	if err == nil {
-		return cookie.Value
-	}
-
-	return ""
+	return lib.GetCookie(this.R, key)
 } // }}}
 
 func (this *BaseController) GetHeader(key string) string { // {{{
@@ -251,6 +148,7 @@ func (this *BaseController) _getFormValue(key string) string { // {{{
 	return strings.Trim(val, " \r\t\v")
 } // }}}
 
+//获取string类型参数
 func (this *BaseController) GetString(key string, defaultValues ...string) string { // {{{
 	defaultValue := ""
 
@@ -265,6 +163,7 @@ func (this *BaseController) GetString(key string, defaultValues ...string) strin
 	return ret
 } // }}}
 
+//获取指定字符连接的字符串并转换成[]string
 func (this *BaseController) GetSlice(key string, separators ...string) []string { //{{{
 	separator := ","
 	if len(separators) > 0 {
@@ -283,6 +182,7 @@ func (this *BaseController) GetSlice(key string, separators ...string) []string 
 	return slice
 } // }}}
 
+//获取指定字符连接的字符串并转换成[]int
 func (this *BaseController) GetSliceInt(key string, separators ...string) []int { //{{{
 	slice := this.GetSlice(key, separators...)
 
@@ -300,6 +200,7 @@ func (this *BaseController) GetSliceInt(key string, separators ...string) []int 
 	return sliceint
 } // }}}
 
+//获取所有参数
 func (this *BaseController) GetParams() map[string]string { // {{{
 	if this.IR.Form == nil {
 		return nil
@@ -315,6 +216,7 @@ func (this *BaseController) GetParams() map[string]string { // {{{
 	return params
 } // }}}
 
+//获取数组类型参数
 func (this *BaseController) GetArray(key string) []string { // {{{
 	if this.IR.Form == nil {
 		return nil
@@ -323,6 +225,7 @@ func (this *BaseController) GetArray(key string) []string { // {{{
 	return vs
 } // }}}
 
+//获取Int型参数
 func (this *BaseController) GetInt(key string, defaultValues ...int) int { // {{{
 	defaultValue := 0
 
@@ -351,6 +254,7 @@ func (this *BaseController) GetInt64(key string, defaultValues ...int64) int64 {
 	return ret
 } // }}}
 
+//获取bool型参数
 func (this *BaseController) GetBool(key string, defaultValues ...bool) bool { // {{{
 	defaultValue := false
 
@@ -365,45 +269,25 @@ func (this *BaseController) GetBool(key string, defaultValues ...bool) bool { //
 	return ret
 } // }}}
 
-func (this *BaseController) GetFromJson(key string) interface{} { // {{{
+//获取json字符串并转换为MAP
+func (this *BaseController) GetMap(key string) lib.MAP { // {{{
 	ret := this._getFormValue(key)
 	if ret != "" {
-		return lib.JsonDecode(ret)
+		json := lib.JsonDecode(ret)
+		if m, ok := json.(lib.MAP); ok {
+			return m
+		}
 	}
-	return ret
+	return nil
 } // }}}
 
+//获取上传文件
 func (this *BaseController) GetFile(key string) (multipart.File, *multipart.FileHeader, error) { // {{{
 	return this.R.FormFile(key)
 } // }}}
 
 func (this *BaseController) GetIp() string { // {{{
-	r := this.R
-
-	ip := r.Header.Get("X-Forwarded-For")
-	if ip == "" || ip == "127.0.0.1" {
-		ip = r.Header.Get("X-Real-IP")
-		if ip == "" {
-			ip = r.Header.Get("Host")
-			if ip == "" {
-				ip = r.RemoteAddr
-			}
-		}
-	} else {
-		//X-Forwarded-For 的格式 client1, proxy1, proxy2
-		ips := strings.Split(ip, ",")
-		if len(ips) > 0 {
-			ip = ips[0]
-		}
-	}
-
-	//去除端口号
-	ips := strings.Split(ip, ":")
-	if len(ips) > 0 {
-		ip = ips[0]
-	}
-
-	return ip
+	return lib.GetIp(this.R)
 } // }}}
 
 func (this *BaseController) GetRequestUri() string { // {{{
@@ -412,7 +296,7 @@ func (this *BaseController) GetRequestUri() string { // {{{
 	}
 
 	if RPC_MODE == this.Mode && nil != this.IR {
-		return this.uri
+		return this.Uri
 	}
 
 	return ""
@@ -426,28 +310,10 @@ func (this *BaseController) GetUA() string { // {{{
 	return ""
 } // }}}
 
-func (this *BaseController) SetCookie(key, val string, lifetime int) { // {{{
-	cookie := &http.Cookie{
-		Name:     key,
-		Value:    val,
-		Path:     "/",
-		HttpOnly: false,
-		MaxAge:   lifetime,
-		Expires:  time.Now().Add(time.Second * time.Duration(lifetime)),
-	}
-	http.SetCookie(this.RW, cookie)
-} // }}}
-
-func (this *BaseController) UnsetCookie(key string) { // {{{
-	cookie := &http.Cookie{
-		Name:     key,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: false,
-		MaxAge:   0,
-		Expires:  time.Now().AddDate(-1, 0, 0),
-	}
-	http.SetCookie(this.RW, cookie)
+//lifetime<0时删除cookie
+//options: domain,secure,httponly,path
+func (this *BaseController) SetCookie(key, val string, lifetime int, options ...interface{}) { // {{{
+	lib.SetCookie(this.RW, key, val, lifetime, options...)
 } // }}}
 
 func (this *BaseController) SetHeader(key, val string) { // {{{
@@ -461,7 +327,7 @@ func (this *BaseController) SetHeaders(headers http.Header) { // {{{
 	}
 } // }}}
 
-//接口正常输出
+//接口正常输出json, 若要改变返回json格式，可在业务代码中重写此方法
 func (this *BaseController) Render(data ...interface{}) { // {{{
 	var retdata interface{}
 	if len(data) > 0 {
@@ -470,22 +336,26 @@ func (this *BaseController) Render(data ...interface{}) { // {{{
 		retdata = make(map[string]interface{})
 	}
 
-	ret := map[string]interface{}{
-		"code":    lib.ERR_SUC.GetCode(),
-		"msg":     lib.ERR_SUC.GetMessage(),
-		"time":    time.Now().Unix(),
-		"consume": this.Cost(),
-		"data":    retdata,
-	}
+	res := this.RenderResponser(lib.ERR_SUC.GetCode(), lib.ERR_SUC.GetMessage(), retdata)
 
-	res := lib.JsonEncode(ret)
-	lib.Logger.Access(this.genLog(), res)
-
-	this.renderJson(res)
+	this.RenderJson(res)
 } // }}}
 
-//接口异常输出，在HttpApiServer中回调
+//接口异常输出json，在HttpApiServer中回调, 若要改变返回json格式，可在业务代码中重写此方法
 func (this *BaseController) RenderError(err interface{}) { // {{{
+	errno, errmsg, retdata := this.GetErrorResponse(err)
+
+	res := this.RenderResponser(errno, errmsg, retdata)
+
+	if LOG_ERROR {
+		lib.Logger.Warn(this.GenLog(), res)
+	}
+
+	this.RenderJson(res)
+} // }}}
+
+//根据捕获的错误获取需要返回的错误码、错误信息及数据
+func (this *BaseController) GetErrorResponse(err interface{}) (int, string, map[string]interface{}) { // {{{
 	var errno int
 	var errmsg string
 	var isbizerr bool
@@ -516,7 +386,9 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 
 	if !isbizerr {
 		debug_trace := debug.Stack()
-		lib.Logger.Error(this.genLog(), errmsg, string(debug_trace))
+		if LOG_ERROR {
+			lib.Logger.Error(this.GenLog(), errmsg, string(debug_trace))
+		}
 
 		fmt.Println(errmsg)
 		os.Stderr.Write(debug_trace)
@@ -530,6 +402,11 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 		retdata = map[string]interface{}{}
 	}
 
+	return errno, errmsg, retdata
+} // }}}
+
+//格式化输出
+func (this *BaseController) RenderResponser(errno, errmsg, retdata interface{}) string { // {{{
 	ret := map[string]interface{}{
 		"code":    errno,
 		"msg":     errmsg,
@@ -538,16 +415,21 @@ func (this *BaseController) RenderError(err interface{}) { // {{{
 		"data":    retdata, //错误时，也可附带一些数据
 	}
 
-	res := lib.JsonEncode(ret)
-	lib.Logger.Warn(this.genLog(), res)
+	return lib.JsonEncode(ret)
+} // }}}
 
-	this.renderJson(res)
+//输出JSON
+func (this *BaseController) RenderJson(json string) { // {{{
+	if nil != this.RW {
+		this.RW.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	}
+
+	this.render(json)
 } // }}}
 
 //输出字符串
 func (this *BaseController) RenderString(data string) { // {{{
-	this.writeToWriter([]byte(data))
-	lib.Logger.Access(this.genLog(), data)
+	this.render(data)
 } // }}}
 
 //输出HTTP状态码
@@ -564,19 +446,22 @@ func (this *BaseController) Redirect(url string, codes ...int) { // {{{
 	http.Redirect(this.RW, this.R, url, code)
 } // }}}
 
-func (this *BaseController) renderJson(data string) { // {{{
+func (this *BaseController) render(data string) { // {{{
+	if LOG_ACCESS {
+		lib.Logger.Access(this.GenLog(), data)
+	}
+
 	if this.Mode == RPC_MODE {
 		this.rpcContent = data
 	} else if this.Mode == CLI_MODE {
 		fmt.Println(data)
 	} else {
-		this.RW.Header().Set("Content-Type", "application/json;charset=UTF-8")
-		this.writeToWriter([]byte(data))
+		this.RW.Write([]byte(data))
 	}
 } // }}}
 
 //获取日志内容
-func (this *BaseController) genLog() map[string]interface{} { // {{{
+func (this *BaseController) GenLog() map[string]interface{} { // {{{
 	ret := make(map[string]interface{})
 
 	if HTTP_MODE == this.Mode && nil != this.R {
@@ -586,7 +471,6 @@ func (this *BaseController) genLog() map[string]interface{} { // {{{
 		ret["uri"] = this.R.URL
 
 		if this.R.Method == "POST" {
-			delete(this.R.PostForm, this.tokenKey)
 			ret["post"] = this.R.PostForm
 		}
 
@@ -595,19 +479,48 @@ func (this *BaseController) genLog() map[string]interface{} { // {{{
 
 	if RPC_MODE == this.Mode && nil != this.IR {
 		delete(this.IR.Form, "secret")
-		ret["uri"] = this.uri
+		ret["uri"] = this.Uri
 		ret["post"] = this.IR.Form
+	}
+
+	for k, v := range this.logParams {
+		ret[k] = v
+	}
+
+	if len(this.logOmitParams) > 0 && nil != ret["post"] {
+		ret_post := ret["post"].(url.Values)
+		if len(ret_post) > 0 {
+			for _, v := range this.logOmitParams {
+				if _, ok := ret_post[v]; ok {
+					delete(ret_post, v)
+				}
+			}
+		}
 	}
 
 	return ret
 } // }}}
 
+//在业务日志中添加自定义字段
+func (this *BaseController) AddLog(k string, v interface{}) { // {{{
+	if nil == this.logParams {
+		this.logParams = map[string]interface{}{}
+	}
+
+	this.logParams[k] = v
+} // }}}
+
+//在业务日志中删除字段(比如密码等敏感字段)
+func (this *BaseController) OmitLog(v string) { // {{{
+	if nil == this.logOmitParams {
+		this.logOmitParams = []string{}
+	}
+
+	this.logOmitParams = append(this.logOmitParams, v)
+} // }}}
+
 func (this *BaseController) Cost() int64 {
 	return time.Now().Sub(this.startTime).Nanoseconds() / 1000 / 1000
-}
-
-func (this *BaseController) writeToWriter(rb []byte) {
-	this.RW.Write(rb)
 }
 
 func (this *BaseController) GetRpcContent() string {

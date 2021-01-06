@@ -17,20 +17,23 @@ type Config struct {
 	jsonData   map[string]map[string]interface{}
 }
 
-func (this *Config) Init(configFile string) {
+func (this *Config) Init(configFile string) error {
 	this.data = make(map[string]map[string]string)
 	this.jsonData = make(map[string]map[string]interface{})
 	this.configFile = configFile
 	err := this.Load(configFile)
 	if err != nil {
-		panic(err)
+		return err
 	}
+
 	fmt.Println("Config Init: ", configFile)
+
+	return nil
 }
 
 const emptyRunes = " \r\t\v"
 
-func (this *Config) Load(configFile string) error {
+func (this *Config) Load(configFile string) error { // {{{
 	stream, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return errors.New("cannot load config file")
@@ -47,9 +50,31 @@ func (this *Config) Load(configFile string) error {
 		this.jsonData[section] = make(map[string]interface{})
 	}
 
+	jsonKey := ""
+	jsonVal := ""
+	injson := false
 	for _, line := range lines {
 		line = strings.Trim(line, emptyRunes)
 		if line == "" || line[0] == '#' || (line[0] == '/' && line[1] == '/') {
+			continue
+		}
+
+		if injson {
+			jsonVal += line
+
+			l := len(line)
+			if l > 2 && line[l-3:] == "```" {
+				_jsonStr := jsonVal[3 : len(jsonVal)-3]
+				_jsonObj := JsonDecode(_jsonStr)
+				if _jsonObj == nil && len(_jsonStr) > 0 {
+					return errors.New("invalid json format for key:" + jsonKey)
+				}
+				this.jsonData[section][jsonKey] = _jsonObj
+
+				jsonKey = ""
+				jsonVal = ""
+				injson = false
+			}
 			continue
 		}
 
@@ -72,16 +97,29 @@ func (this *Config) Load(configFile string) error {
 
 			key := parts[0]
 			value := parts[1]
-			//include json file
-			if len(value) > 0 && value[0] == '<' && value[len(value)-1] == '>' {
-				includes := strings.SplitN(strings.TrimSpace(value[1:len(value)-1]), " ", 2)
-				if len(includes) == 2 && strings.EqualFold(includes[0], "include") {
-					this.jsonData[section][key], err = this.loadJson(includes[1])
-					if nil != err {
-						return err
+
+			//parse json val
+			l := len(value)
+			if l > 2 && value[0:3] == "```" {
+				jsonKey = key
+				jsonVal = value
+				injson = true
+
+				if l > 5 && value[l-3:] == "```" {
+					_jsonStr := jsonVal[3 : len(jsonVal)-3]
+					_jsonObj := JsonDecode(_jsonStr)
+					if _jsonObj == nil && len(_jsonStr) > 0 {
+						return errors.New("invalid json format for key:" + jsonKey)
 					}
+
+					this.jsonData[section][jsonKey] = _jsonObj
+					jsonKey = ""
+					jsonVal = ""
+					injson = false
 				}
+				continue
 			}
+
 			this.data[section][key] = value
 		} else {
 			//处理include
@@ -101,53 +139,34 @@ func (this *Config) Load(configFile string) error {
 		}
 	}
 	return nil
-}
-
-func (this *Config) loadJson(file string) (interface{}, error) { // {{{
-	confDir := path.Dir(this.configFile)
-	newConfName := strings.Trim(file, emptyRunes)
-	newConfPath := path.Join(confDir, newConfName)
-
-	stream, err := ioutil.ReadFile(newConfPath)
-	if err != nil {
-		return nil, errors.New("cannot load json config file:" + err.Error())
-	}
-
-	result := JsonDecode(string(stream))
-	if result == nil && len(stream) > 0 {
-		return nil, errors.New("invalid json format for file:" + file)
-	}
-
-	return result, nil
 } // }}}
 
 func (this *Config) GetAll(section string) map[string]string {
 	return this.data[section]
 }
 
-func (this *Config) parseKey(keys ...string) (string, string) {
+func (this *Config) parseKey(keys ...string) (string, string) { // {{{
 	key := keys[0]
 	section := "default"
 	if len(keys) > 1 {
-		section = keys[1]
+		section = keys[0]
+		key = keys[1]
 	}
 
-	return key, section
-}
+	return section, key
+} // }}}
 
-func (this *Config) Get(keys ...string) string {
-	key, section := this.parseKey(keys...)
+func (this *Config) Get(keys ...string) string { // {{{
+	section, key := this.parseKey(keys...)
 
 	if value, ok := this.data[section][key]; ok {
 		return value
 	}
 	return ""
-}
+} // }}}
 
-func (this *Config) GetInt(keys ...string) int {
-	key, section := this.parseKey(keys...)
-
-	value := this.Get(key, section)
+func (this *Config) GetInt(keys ...string) int { // {{{
+	value := this.Get(keys...)
 	if value == "" {
 		return 0
 	}
@@ -156,12 +175,10 @@ func (this *Config) GetInt(keys ...string) int {
 		return 0
 	}
 	return result
-}
+} // }}}
 
-func (this *Config) GetBool(keys ...string) bool {
-	key, section := this.parseKey(keys...)
-
-	value := this.Get(key, section)
+func (this *Config) GetBool(keys ...string) bool { // {{{
+	value := this.Get(keys...)
 	if value == "" {
 		return false
 	}
@@ -170,12 +187,10 @@ func (this *Config) GetBool(keys ...string) bool {
 		result = false
 	}
 	return result
-}
+} // }}}
 
-func (this *Config) GetInt64(keys ...string) int64 {
-	key, section := this.parseKey(keys...)
-
-	value := this.Get(key, section)
+func (this *Config) GetInt64(keys ...string) int64 { // {{{
+	value := this.Get(keys...)
 	if value == "" {
 		return 0
 	}
@@ -184,28 +199,23 @@ func (this *Config) GetInt64(keys ...string) int64 {
 		return 0
 	}
 	return result
-}
+} // }}}
 
-func (this *Config) GetSlice(key string, separators ...string) []string {
+func (this *Config) GetSlice(keys ...string) []string { // {{{
 	separator := ","
-	section := "default"
-
-	if len(separators) > 0 {
-		separator, section = this.parseKey(separators...)
-	}
 
 	slice := []string{}
-	value := this.Get(key, section)
+	value := this.Get(keys...)
 	if value != "" {
 		for _, part := range strings.Split(value, separator) {
 			slice = append(slice, strings.Trim(part, emptyRunes))
 		}
 	}
 	return slice
-}
+} // }}}
 
-func (this *Config) GetSliceInt(key string, separators ...string) []int {
-	slice := this.GetSlice(key, separators...)
+func (this *Config) GetSliceInt(keys ...string) []int { // {{{
+	slice := this.GetSlice(keys...)
 	results := []int{}
 	for _, part := range slice {
 		result, err := strconv.Atoi(part)
@@ -215,10 +225,10 @@ func (this *Config) GetSliceInt(key string, separators ...string) []int {
 		results = append(results, result)
 	}
 	return results
-}
+} // }}}
 
 func (this *Config) GetJson(keys ...string) interface{} { // {{{
-	key, section := this.parseKey(keys...)
+	section, key := this.parseKey(keys...)
 
 	parts := []string{}
 	if strings.Contains(key, ".") {

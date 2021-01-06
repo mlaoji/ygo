@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	SERVER_HTTP = "http"
-	SERVER_RPC  = "rpc"
-	SERVER_CLI  = "cli"
+	SYSTEM_VERSION = "v0.1.1"
+	SERVER_HTTP    = "http"
+	SERVER_RPC     = "rpc"
+	SERVER_CLI     = "cli"
 )
 
 type Ygo struct {
@@ -34,6 +35,21 @@ func NewYgo() *Ygo {
 }
 
 func (this *Ygo) Init() {
+	logo := `
+
+    _/      _/    _/_/_/    _/_/
+     _/  _/    _/        _/    _/
+      _/      _/  _/_/  _/    _/
+     _/      _/    _/  _/    _/
+    _/        _/_/_/    _/_/
+
+` +
+		"Author: mlaoji\n" +
+		"Version: " + SYSTEM_VERSION + "\n" +
+		"Home: https://github.com/mlaoji/ygo\n"
+
+	fmt.Printf("\033[1;31;33m%s\033[0m\n", logo)
+
 	this.envInit()
 	this.genPidFile()
 }
@@ -47,9 +63,13 @@ func (this *Ygo) envInit() {
 	debug := flag.Bool("d", false, "use debug mode")
 	flag.Parse()
 
-	controllers.DEBUG_OPEN = *debug
+	controllers.DEBUG = *debug
 
-	lib.Conf.Init(*confiPath)
+	err := lib.Conf.Init(*confiPath)
+	if nil != err {
+		fmt.Println("Error: ", err)
+		os.Exit(0)
+	}
 
 	if *mode != "" {
 		this.Mode = *mode
@@ -72,17 +92,17 @@ func (this *Ygo) envInit() {
 
 	lib.LocalCache.Init()
 
-	fmt.Println("run cmd: ", os.Args[0])
+	fmt.Println("run cmd: ", os.Args)
 	fmt.Println("time: ", time.Now().Format("2006-01-02 15:04:05"))
 }
 
-//添加http 方法对应的controller
-func (this *Ygo) AddApi(c interface{}) {
+//添加http 方法对应的controller, 支持分组; 默认url路径: controller/action, 分组时路径: group/controller/action
+func (this *Ygo) AddApi(c interface{}, group ...string) {
 	if this.HttpServer == nil {
 		this.initHttpServer()
 	}
 
-	this.HttpServer.AddController(c)
+	this.HttpServer.AddController(c, group...)
 }
 
 //添加rcp 方法对应的controller

@@ -31,8 +31,8 @@ type HttpServer struct {
 	handler  *httpHandler
 }
 
-func (this *HttpServer) AddController(c interface{}) {
-	this.handler.addController(c)
+func (this *HttpServer) AddController(c interface{}, group ...string) {
+	this.handler.addController(c, group...)
 }
 
 /*
@@ -54,7 +54,7 @@ func (this *HttpServer) Run() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	addr := fmt.Sprintf("%s:%d", this.HttpAddr, this.HttpPort)
 
-	log.Println("HttpServer Listen: ", addr)
+	log.Println("HttpServer Listen", addr)
 	endless.DefaultReadTimeOut = time.Duration(this.Timeout) * time.Millisecond
 	endless.DefaultWriteTimeOut = time.Duration(this.Timeout) * time.Millisecond
 	if 1 == Conf.GetInt("dev_mode") {
@@ -63,8 +63,12 @@ func (this *HttpServer) Run() {
 	log.Println(endless.ListenAndServe(addr, this.handler))
 }
 
-//controller中以此结尾的方法会参与路由
-const METHOD_EXPORT_TAG = "Action"
+//controller中以此后缀结尾的方法会参与路由
+const ACTION_SUFFIX = "Action"
+
+//默认controller/action
+const DEFAULT_CONTROLLER = "Index"
+const DEFAULT_ACTION = "Index"
 
 type httpHandler struct {
 	routMap     map[string]map[string]reflect.Type //key:controller: {key:method value:reflect.type}
@@ -94,7 +98,12 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}()
 
 	rw.Header().Set("Server", "YGOServer")
-	if ref := r.Referer(); ref != "" {
+	//跨域设置
+	ref := r.Referer()
+	if "" == ref {
+		ref = r.Header.Get("Origin")
+	}
+	if ref != "" {
 		if u, err := url.Parse(ref); nil == err {
 			cors_domain := Conf.Get("cors_domain")
 			if len(cors_domain) > 0 {
@@ -119,7 +128,7 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var uri, cname, mname string
+	var uri, controller_name, action_name string
 	if this.enablePprof && strings.HasPrefix(r.URL.Path, "/debug/pprof") { //如果开启了pprof, 相关请求走DefaultServeMux
 		this.monitorPprof(rw, r)
 		return
@@ -129,30 +138,45 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	} else { //根据路径路由: User/GetUserInfo
 		uri = strings.Trim(r.URL.Path, " \r\t\v/")
 
-		//Interceptor(len(path) > 1, ERR_METHOD_INVALID, r.URL.Path)
-		cname = "Index"
-		mname = "Index"
-
 		if "" != uri {
 			path := strings.Split(uri, "/")
 			l := len(path)
 			if l > 0 {
-				cname = strings.Title(path[0])
+				controller_name = strings.Title(path[0])
 
 				if l > 1 {
-					mname = strings.Title(path[1])
+					action_name = strings.Title(path[1])
 				}
+
+				if l > 2 {
+					if _, ok := this.routMap[path[0]+"/"+action_name]; ok {
+						controller_name = path[0] + "/" + action_name
+						action_name = strings.Title(path[2])
+					}
+				}
+			}
+		}
+
+		if "" == controller_name {
+			controller_name = Conf.Get("default_controller")
+			if "" == controller_name {
+				controller_name = DEFAULT_CONTROLLER
+			}
+		}
+
+		if "" == action_name {
+			action_name = Conf.Get("default_action")
+			if "" == action_name {
+				action_name = DEFAULT_ACTION
 			}
 		}
 	}
 
-	//只能调用以Action结尾的方法
-	mname = mname + METHOD_EXPORT_TAG
 	canhandler := false
 	var contollerType reflect.Type
-	if cname != "" && mname != "" {
-		if methodMap, ok := this.routMap[cname]; ok {
-			if contollerType, ok = methodMap[mname]; ok {
+	if controller_name != "" && action_name != "" {
+		if methodMap, ok := this.routMap[controller_name]; ok {
+			if contollerType, ok = methodMap[action_name]; ok {
 				canhandler = true
 			}
 		}
@@ -175,10 +199,11 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	in = make([]reflect.Value, 3)
+	in = make([]reflect.Value, 4)
 	in[0] = reflect.ValueOf(rw)
 	in[1] = reflect.ValueOf(r)
-	in[2] = reflect.ValueOf(uri)
+	in[2] = reflect.ValueOf(controller_name)
+	in[3] = reflect.ValueOf(action_name)
 	method = vc.MethodByName("Prepare")
 	method.Call(in)
 
@@ -188,7 +213,7 @@ func (this *httpHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	method.Call(in)
 
 	in = make([]reflect.Value, 0)
-	method = vc.MethodByName(mname)
+	method = vc.MethodByName(action_name + ACTION_SUFFIX)
 	method.Call(in)
 }
 
@@ -202,21 +227,25 @@ func (this *httpHandler) monitorStatus(rw http.ResponseWriter, r *http.Request) 
 	rw.Write([]byte("ok\n"))
 }
 
-func (this *httpHandler) addController(c interface{}) {
+func (this *httpHandler) addController(c interface{}, group ...string) {
 	reflectVal := reflect.ValueOf(c)
 	rt := reflectVal.Type()
 	ct := reflect.Indirect(reflectVal).Type()
-	firstParam := strings.TrimSuffix(ct.Name(), "Controller")
-	if _, ok := this.routMap[firstParam]; ok {
+	controller_name := strings.TrimSuffix(ct.Name(), "Controller")
+	if len(group) > 0 {
+		controller_name = group[0] + "/" + controller_name
+	}
+
+	if _, ok := this.routMap[controller_name]; ok {
 		return
 	} else {
-		this.routMap[firstParam] = make(map[string]reflect.Type)
+		this.routMap[controller_name] = make(map[string]reflect.Type)
 	}
-	var mname string
+	var action_fullname string
 	for i := 0; i < rt.NumMethod(); i++ {
-		mname = rt.Method(i).Name
-		if strings.HasSuffix(mname, METHOD_EXPORT_TAG) {
-			this.routMap[firstParam][rt.Method(i).Name] = ct
+		action_fullname = rt.Method(i).Name
+		if strings.HasSuffix(action_fullname, ACTION_SUFFIX) {
+			this.routMap[controller_name][strings.TrimSuffix(action_fullname, ACTION_SUFFIX)] = ct
 		}
 	}
 }

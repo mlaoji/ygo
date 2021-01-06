@@ -145,7 +145,7 @@ func NewServer(addr string, handler http.Handler) (srv *endlessServer) { // {{{
 	srv.DevMode = DevMode
 
 	srv.BeforeBegin = func(addr string) {
-		log.Println(syscall.Getpid(), addr)
+		//log.Println(syscall.Getpid(), addr)
 	}
 
 	runningServersOrder = append(runningServersOrder, addr)

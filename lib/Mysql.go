@@ -220,8 +220,14 @@ func (this *MysqlClient) insert(table string, vals map[string]interface{}, isrep
 		}
 		buf.WriteString(col)
 		buf.WriteString("=")
-		buf.WriteString("?")
-		value = append(value, val)
+
+		if fval := this.getFuncParam(val); fval != "" {
+			buf.WriteString(fval)
+		} else {
+			buf.WriteString("?")
+			value = append(value, val)
+		}
+
 		i++
 	}
 	_sql := buf.String()
@@ -250,14 +256,20 @@ func (this *MysqlClient) Update(table string, vals map[string]interface{}, where
 
 	var value []interface{}
 	i := 0
-	for col, v := range vals {
+	for col, val := range vals {
 		if i > 0 {
 			buf.WriteString(",")
 		}
 		buf.WriteString(col)
 		buf.WriteString("=")
-		buf.WriteString("?")
-		value = append(value, v)
+
+		if fval := this.getFuncParam(val); fval != "" {
+			buf.WriteString(fval)
+		} else {
+			buf.WriteString("?")
+			value = append(value, val)
+		}
+
 		i++
 	}
 
@@ -270,6 +282,25 @@ func (this *MysqlClient) Update(table string, vals map[string]interface{}, where
 	affect, _ := result.RowsAffected()
 
 	return int(affect)
+} // }}}
+
+func (this *MysqlClient) getFuncParam(param interface{}) string { // {{{
+	val := fmt.Sprint(param)
+	if strings.HasPrefix(val, "#:F:#") {
+		return string([]byte(val)[6:])
+	}
+
+	return ""
+} // }}}
+
+//拼装参数时，作为可执行字符，而不是字符串值
+func (this *MysqlClient) FuncParam(param interface{}) string { // {{{
+	val := fmt.Sprint(param)
+	if "" != val {
+		return "#:F:#" + val
+	}
+
+	return ""
 } // }}}
 
 //Execute {{{
@@ -390,55 +421,3 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 
 	return data
 } // }}}
-
-/*
-func main() {
-	_db := &Mysql{
-		Host:     "101.201.121.93:4389",
-		User:     "testdb",
-		Password: "testserverfortt",
-		Database: "yb_live",
-	}
-	_db.Init()
-
-	_sql := "select count(0) as title from topic where tid = ?"
-
-	v := _db.GetOne(_sql, "1")
-
-	fmt.Printf("%#v", v)
-	s1, _ := strconv.Atoi(v)
-	fmt.Println(s1)
-
-	row := _db.GetRow(_sql, "1")
-
-	fmt.Printf("%#v", row)
-	for k, v := range row {
-		fmt.Printf("%#v", k)
-		fmt.Printf("%#v", v)
-	}
-
-	fmt.Println("...")
-	_sql = "select title from topic where tid = ?"
-	s := _db.GetAll(_sql, "1")
-
-	fmt.Printf("%+v", s)
-	for k, v := range s {
-		fmt.Sprintln(k, v)
-
-		for k1, v1 := range v {
-			fmt.Sprintln(k1, v1)
-		}
-	}
-
-	fmt.Println("...")
-	id := _db.Update("topic", map[string]interface{}{"title": "testaaa"}, "tid=?", 28)
-	fmt.Printf("%#v", id)
-
-	id1 := _db.Replace("topic", map[string]interface{}{"title": "testaaa", "tid": 28})
-	fmt.Printf("%#v", id1)
-
-	id2 := _db.Update("topic", map[string]interface{}{"title": "testbbb"}, "tid=?", 28)
-	fmt.Printf("%#v", id2)
-}
-
-*/

@@ -2,7 +2,7 @@ package lib
 
 import (
 	"fmt"
-	"github.com/patrickmn/go-cache"
+	"github.com/mlaoji/go-cache"
 	"time"
 )
 
@@ -10,48 +10,39 @@ var LocalCache = &localCache{}
 
 const (
 	DEFAULT_TTL    = 5 * time.Minute
-	CLEAN_INTERVAL = 30 * time.Second
+	CLEAN_INTERVAL = 30 * time.Minute
 )
 
 type localCache struct {
 	c *cache.Cache
 }
 
-func (this *localCache) Init() {
-	this.c = cache.New(DEFAULT_TTL, CLEAN_INTERVAL)
+func (this *localCache) Init() { // {{{
+	//若配置了redis, 则开启广播，用于远程更新缓存
+	redis_conf := Conf.GetAll("redis_gocache")
+	if len(redis_conf) > 0 {
+		cache.RedisConf = redis_conf
+		cache.PubSubOpen = true
+	}
+
+	this.c = cache.NewCache(DEFAULT_TTL, CLEAN_INTERVAL)
 	fmt.Println("LocalCache Init")
-}
-
-//Add {{{
-func (this *localCache) Add(key string, val interface{}, ttls ...time.Duration) error {
-	ttl := cache.DefaultExpiration
-
-	if len(ttls) > 0 {
-		ttl = ttls[0]
-	}
-
-	return this.c.Add(key, val, ttl)
 } // }}}
 
-//Set {{{
-func (this *localCache) Set(key string, val interface{}, ttls ...time.Duration) {
-	ttl := cache.DefaultExpiration
-
-	if len(ttls) > 0 {
-		ttl = ttls[0]
-	}
-
-	this.c.Set(key, val, ttl)
+func (this *localCache) Add(key string, val interface{}, ttls ...time.Duration) error { //{{{
+	return this.c.Add(key, val, ttls...)
 } // }}}
 
-//Get {{{
-func (this *localCache) Get(key string) (val interface{}, found bool) {
-	val, found = this.c.Get(key)
+func (this *localCache) Set(key string, val interface{}, ttls ...time.Duration) { //{{{
+	this.c.Set(key, val, ttls...)
+} // }}}
+
+func (this *localCache) Get(key string) (val interface{}, found bool) { //{{{
+	val, _, found = this.c.Get(key)
 	return
 } // }}}
 
-//Increment {{{
-func (this *localCache) Increment(key string, n ...int) error {
+func (this *localCache) Increment(key string, n ...int) (interface{}, error) { //{{{
 	step := 1
 
 	if len(n) > 0 {
@@ -61,7 +52,21 @@ func (this *localCache) Increment(key string, n ...int) error {
 	return this.c.Increment(key, int64(step))
 } // }}}
 
-//Del {{{
-func (this *localCache) Del(key string) {
+func (this *localCache) Decrement(key string, n ...int) (interface{}, error) { //{{{
+	step := 1
+
+	if len(n) > 0 {
+		step = n[0]
+	}
+
+	return this.c.Decrement(key, int64(step))
+} // }}}
+
+func (this *localCache) Del(key string) { //{{{
 	this.c.Delete(key)
+} // }}}
+
+//通过redis广播，更新所有服务器上的同名缓存
+func (this *localCache) FlushCache(key string) error { //{{{
+	return this.c.FlushCache(key)
 } // }}}

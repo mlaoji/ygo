@@ -4,9 +4,18 @@ if [ "$mode" == "" ] ;then
     mode=http
 fi
 
-if [ "$idc" != "" ] ;then
-    idc=".$idc"
+if [ "$idc" == "" ] ;then
+    idc=test
 fi
+
+args=($*)
+ext_args=""
+for ((i=0; i<$#; i ++))  
+do  
+    if [[ $i > 1 ]];then
+        ext_args="$ext_args ${args[$i]}"
+    fi
+done
 
 ROOT_DIR=`pwd`
 
@@ -21,7 +30,7 @@ fi
 
 echo "GOPATH:$GOPATH"
 
-echo "go run main.go -o $PWD/logs -f $PWD/conf/app.conf$idc -m $mode"
-go run main.go -o $PWD/logs -f $PWD/conf/app.conf$idc -m $mode
+echo "go run main.go -o $PWD/logs -f $PWD/conf/app.conf.$idc -m $mode"
+go run main.go -o $PWD/logs -f $PWD/conf/app.conf.$idc -m $mode $ext_args
 
 export GOPATH=$sysgopath

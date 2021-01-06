@@ -55,7 +55,7 @@ func (this *RpcServer) Run() {
 	//runtime.GOMAXPROCS(runtime.NumCPU())
 	s := grpc.NewServer()
 	pb.RegisterYGOServiceServer(s, this.hanlder)
-	fmt.Println("RpcServer Listen: ", this.Port)
+	log.Println("RpcServer Listen:", this.Port)
 
 	endless.DefaultReadTimeOut = time.Duration(this.Timeout) * time.Millisecond
 	endless.DefaultWriteTimeOut = time.Duration(this.Timeout) * time.Millisecond
@@ -119,23 +119,19 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string) (r
 		}
 	}()
 
-	var cname, mname string
 	uri := strings.Trim(requesturi, " \r\t\v/")
-
 	path := strings.Split(uri, "/")
 
 	Interceptor(len(path) > 1, ERR_METHOD_INVALID, uri)
 
-	cname = strings.Title(path[0])
-	mname = strings.Title(path[1])
+	controller_name := strings.Title(path[0])
+	action_name := strings.Title(path[1])
 
-	//只能调用以Action结尾的方法
-	mname = mname + METHOD_EXPORT_TAG
 	canhandler := false
 	var contollerType reflect.Type
-	if cname != "" && mname != "" {
-		if methodMap, ok := this.routMap[cname]; ok {
-			if contollerType, ok = methodMap[mname]; ok {
+	if controller_name != "" && action_name != "" {
+		if methodMap, ok := this.routMap[controller_name]; ok {
+			if contollerType, ok = methodMap[action_name]; ok {
 				canhandler = true
 			}
 		}
@@ -168,14 +164,20 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string) (r
 		rpc_params.Set(k, v)
 	}
 
-	in = make([]reflect.Value, 2)
+	in = make([]reflect.Value, 3)
 	in[0] = reflect.ValueOf(rpc_params)
-	in[1] = reflect.ValueOf(uri)
+	in[1] = reflect.ValueOf(controller_name)
+	in[2] = reflect.ValueOf(action_name)
 	method = vc.MethodByName("PrepareRpc")
 	method.Call(in)
 
+	//call Init method if exists
 	in = make([]reflect.Value, 0)
-	method = vc.MethodByName(mname)
+	method = vc.MethodByName("Init")
+	method.Call(in)
+
+	in = make([]reflect.Value, 0)
+	method = vc.MethodByName(action_name + ACTION_SUFFIX)
 	method.Call(in)
 
 	in = make([]reflect.Value, 0)
@@ -190,17 +192,17 @@ func (this *rpcHandler) addController(c interface{}) {
 	reflectVal := reflect.ValueOf(c)
 	rt := reflectVal.Type()
 	ct := reflect.Indirect(reflectVal).Type()
-	firstParam := strings.TrimSuffix(ct.Name(), "Controller")
-	if _, ok := this.routMap[firstParam]; ok {
+	controller_name := strings.TrimSuffix(ct.Name(), "Controller")
+	if _, ok := this.routMap[controller_name]; ok {
 		return
 	} else {
-		this.routMap[firstParam] = make(map[string]reflect.Type)
+		this.routMap[controller_name] = make(map[string]reflect.Type)
 	}
-	var mname string
+	var action_fullname string
 	for i := 0; i < rt.NumMethod(); i++ {
-		mname = rt.Method(i).Name
-		if strings.HasSuffix(mname, METHOD_EXPORT_TAG) {
-			this.routMap[firstParam][rt.Method(i).Name] = ct
+		action_fullname = rt.Method(i).Name
+		if strings.HasSuffix(action_fullname, ACTION_SUFFIX) {
+			this.routMap[controller_name][strings.TrimSuffix(action_fullname, ACTION_SUFFIX)] = ct
 		}
 	}
 }

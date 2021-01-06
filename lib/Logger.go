@@ -21,15 +21,17 @@ func NewLogger(path, name string, level int) *FileLogger {
 
 // Log levels
 const (
-	LevelDebug = iota
-	LevelAccess
-	LevelWarn
-	LevelError
+	LevelNone   = 0x00
+	LevelError  = 0x01
+	LevelWarn   = 0x02
+	LevelAccess = 0x04
+	LevelInfo   = 0x08
+	LevelDebug  = 0x10
+	LevelAll    = 0xFF
 )
 
 type FileLogger struct {
 	loggerMap map[string]*log.Logger
-	fdMap     map[string]*os.File
 	curDate   map[string]string
 	rootPath  string
 	logName   string
@@ -42,7 +44,6 @@ func (this *FileLogger) Init(rootPath, logName string, logLevel int) {
 	this.logName = logName
 	this.curDate = make(map[string]string)
 	this.loggerMap = make(map[string]*log.Logger)
-	this.fdMap = make(map[string]*os.File)
 	this.logLevel = logLevel
 
 	os.MkdirAll(this.rootPath, 0777)
@@ -50,23 +51,19 @@ func (this *FileLogger) Init(rootPath, logName string, logLevel int) {
 
 func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 	nowDate := time.Now().Format("20060102")
-	filePath := this.rootPath + "/" + logName + ".log." + nowDate
+	filePath := this.rootPath + "/" + logName + "." + nowDate
 	this.lock.RLock()
 	retLogger, ok := this.loggerMap[logName]
-	fd, ok := this.fdMap[logName]
 	curDate, ok := this.curDate[logName]
 	if !ok || nowDate != curDate {
 		this.lock.RUnlock()
 		this.lock.Lock()
 		defer this.lock.Unlock()
 
-		fd, ok = this.fdMap[logName]
-		curDate, ok = this.curDate[logName]
+		retLoggerRetry, ok := this.loggerMap[logName]
+		curDateRetry, ok := this.curDate[logName]
 		//双重判断，减少抢锁
-		if !ok || nowDate != curDate {
-			if fd != nil {
-				fd.Close()
-			}
+		if !ok || nowDate != curDateRetry {
 			fd, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0777)
 			if err != nil {
 				return nil, err
@@ -74,11 +71,12 @@ func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 			//创建文件的时候指定777权限不管用，所有只能在显式chmod
 			fd.Chmod(0777)
 			this.loggerMap[logName] = log.New(fd, "", 0)
-			this.fdMap[logName] = fd
 			this.curDate[logName] = nowDate
 			fmt.Println("new logger:", filePath)
 
 			retLogger = this.loggerMap[logName]
+		} else {
+			retLogger = retLoggerRetry
 		}
 	} else {
 		this.lock.RUnlock()
@@ -91,7 +89,7 @@ func (this *FileLogger) writeLog(logName string, v ...interface{}) {
 	go this._writeLog(logName, v...)
 }
 
-func (this *FileLogger) _writeLog(logName string, v ...interface{}) {
+func (this *FileLogger) _writeLog(logName string, v ...interface{}) { // {{{
 	logger, err := this.getLogger(logName)
 	if err != nil {
 		fmt.Println("log failed", err)
@@ -116,10 +114,10 @@ func (this *FileLogger) _writeLog(logName string, v ...interface{}) {
 	msgstr = strings.TrimRight(msgstr, ",")
 	timeNow := time.Now().Format("2006-01-02 15:04:05") //go的坑，必须是2006-01-02 15:04:05
 	logger.Printf("time[%s] %s\n", timeNow, msgstr)
-}
+} // }}}
 
-func (this *FileLogger) Debug(v ...interface{}) {
-	if this.logLevel > LevelDebug {
+func (this *FileLogger) Debug(v ...interface{}) { // {{{
+	if this.logLevel&LevelDebug == 0 {
 		return
 	}
 
@@ -128,29 +126,36 @@ func (this *FileLogger) Debug(v ...interface{}) {
 		fmt.Printf(" %#v ", val)
 	}
 	fmt.Println("")
-	this.writeLog(this.logName+"_debug", v...)
-}
+	this.writeLog(this.logName+".debug", v...)
+} // }}}
 
-func (this *FileLogger) Access(v ...interface{}) {
-	if this.logLevel > LevelAccess {
+func (this *FileLogger) Info(v ...interface{}) { // {{{
+	if this.logLevel&LevelInfo == 0 {
 		return
 	}
-	this.writeLog(this.logName+"_access", v...)
-}
+	this.writeLog(this.logName+".info", v...)
+} // }}}
 
-func (this *FileLogger) Warn(v ...interface{}) {
-	if this.logLevel > LevelWarn {
+func (this *FileLogger) Access(v ...interface{}) { // {{{
+	if this.logLevel&LevelAccess == 0 {
 		return
 	}
-	this.writeLog(this.logName+"_warn", v...)
-}
+	this.writeLog(this.logName, v...)
+} // }}}
 
-func (this *FileLogger) Error(v ...interface{}) {
-	if this.logLevel > LevelError {
+func (this *FileLogger) Warn(v ...interface{}) { // {{{
+	if this.logLevel&LevelWarn == 0 {
 		return
 	}
-	this.writeLog(this.logName+"_error", v...)
-}
+	this.writeLog(this.logName+".warn", v...)
+} // }}}
+
+func (this *FileLogger) Error(v ...interface{}) { // {{{
+	if this.logLevel&LevelError == 0 {
+		return
+	}
+	this.writeLog(this.logName+".error", v...)
+} // }}}
 
 func (this *FileLogger) Other(logname string, v ...interface{}) {
 	this.writeLog(logname, v...)

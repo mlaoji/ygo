@@ -36,7 +36,7 @@ func (this *DAOProxy) Init(conf ...string) { //{{{
 		slave_conf = conf[1]
 	}
 
-	slave_confs := lib.Conf.GetSlice("slaves", ",", slave_conf)
+	slave_confs := lib.Conf.GetSlice(slave_conf, "slaves")
 	if len(slave_confs) > 0 {
 		rand.Seed(int64(time.Now().Nanosecond()))
 		idx := rand.Intn(len(slave_confs))
@@ -317,8 +317,24 @@ func (this *DAOProxy) preParams(obj interface{}) map[string]interface{} {
 	return data
 } // }}}
 
+//以无引号方式代入值,谨慎使用！！！
+func (this *DAOProxy) FuncParam(param interface{}) string { //{{{
+	return this.DBReader.FuncParam(param)
+} // }}}
+
 func (this *DAOProxy) Execute(sql string, params ...interface{}) int { //{{{
 	return this.DBWriter.Execute(sql, params...)
+} // }}}
+
+//复杂查询
+func (this *DAOProxy) Query(sql string, params ...interface{}) []map[string]interface{} { //{{{
+	list := this.GetDBReader().GetAll(sql, params...)
+
+	if len(list) > 0 && nil != this.bind {
+		this.parseRecords(list)
+	}
+
+	return list
 } // }}}
 
 //AddRecord、SetRecord、ResetRecord 支持传入map[string]interface{} 和 struct 两种类型参数

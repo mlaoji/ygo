@@ -124,15 +124,10 @@ func (this *Restrict) incrRecord(uniqid string) (times int) { //{{{
 	key := this.getKey(uniqid)
 
 	if this.CacheType == CACHE_TYPE_LOCAL {
-		err := LocalCache.Increment(key, 1)
+		times, err := LocalCache.Increment(key, 1)
 		if nil != err {
 			LocalCache.Add(key, 1, time.Duration(this.Interval)*time.Second)
 			return 1
-		}
-
-		times, found := LocalCache.Get(key)
-		if !found {
-			return 0
 		}
 
 		return times.(int)

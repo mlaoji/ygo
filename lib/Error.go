@@ -10,20 +10,14 @@ var (
 	//成功
 	ERR_SUC = &Error{0, "OK"}
 
-	//系统级别，10X
-	ERR_SYSTEM         = &Error{100, "系统错误"}
-	ERR_METHOD_INVALID = &Error{101, "请求不合法: %+v"}
-	ERR_PARAMS         = &Error{102, "参数格式错误: %+v"}
-	ERR_GUID           = &Error{103, "签名不合法: %+v"}
-	ERR_FLOOD          = &Error{104, "不能重复请求: %+v"}
-	ERR_FREQ           = &Error{105, "接口访问过于频繁: %+v"}
-	ERR_TOKEN          = &Error{106, "您的登录已过期,请重新登录"}
-	ERR_SIGN           = &Error{107, "令牌[sign]不正确:%+v"}
-	ERR_RPCAUTH        = &Error{108, "rpc认证失败:%+v"}
-	ERR_OTHER          = &Error{109, "%+v"}
-	ERR_BAN            = &Error{110, "帐号被封禁"}
+	//系统错误码
+	ERR_SYSTEM         = &Error{10, "系统错误"}
+	ERR_METHOD_INVALID = &Error{11, "请求不合法: %+v"}
+	ERR_FREQ           = &Error{12, "接口访问过于频繁: %+v"}
+	ERR_RPCAUTH        = &Error{13, "rpc认证失败:%+v"}
+	ERR_OTHER          = &Error{14, "%+v"}
 
-	//业务级别，需要定义到业务代码中, 使用4位数字, 不同业务使用不同号段
+	//业务级别错误码，需要定义到业务代码中
 	//ERR_USER_NOT_EXIST = &Error{1101, "用户不存在: %s"}
 )
 
@@ -60,6 +54,7 @@ func (this *Errorf) GetCode() int {
 
 func (this *Errorf) GetMessage(langs ...string) string { // {{{
 	if len(this.fmts) > 0 {
+		//fmts的可用值为string, 若fmts最后一个值为map, 则认为它是异常时返回的data
 		if data, ok := this.fmts[len(this.fmts)-1].(map[string]interface{}); ok {
 			this.fmts = this.fmts[0 : len(this.fmts)-1]
 
@@ -104,4 +99,11 @@ func (this *Errorf) GetData() map[string]interface{} {
 }
 func (this *Errorf) Error() string {
 	return this.GetMessage()
+}
+
+//捕获异常时，可同时返回data(通过fmts参数最后一个类型为map的值)
+func Interceptor(guard bool, errmsg *Error, fmts ...interface{}) {
+	if !guard {
+		panic(&Errorf{errmsg.Code, errmsg.Msg, fmts, nil})
+	}
 }

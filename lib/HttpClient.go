@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -61,21 +62,35 @@ func (r *httpResponse) GetHeader() http.Header {
 	return r.header
 }
 
-func (this *HttpClient) Get(url string, headers ...http.Header) (*httpResponse, error) { // {{{
-	return this.Request("GET", url, nil, headers...)
+func (this *HttpClient) Get(requrl string, headers ...http.Header) (*httpResponse, error) { // {{{
+	return this.Request("GET", requrl, nil, headers...)
 } //}}}
 
-func (this *HttpClient) Post(url string, post_data io.Reader, headers ...http.Header) (*httpResponse, error) { // {{{
-	return this.Request("POST", url, post_data, headers...)
+func (this *HttpClient) Post(requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+	return this.Request("POST", requrl, post_data, headers...)
 } //}}}
 
-func (this *HttpClient) Request(method, url string, post_data io.Reader, headers ...http.Header) (*httpResponse, error) { // {{{
-	req, err := http.NewRequest(method, url, post_data)
+//post_data 支持map[string]interface{} 和 io.Reader 两种参数类型
+func (this *HttpClient) Request(method, requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+	var data io.Reader
+	if params, ok := post_data.(map[string]interface{}); ok {
+		urlparams := url.Values{}
+		for k, v := range params {
+			urlparams.Add(k, AsString(v))
+		}
+
+		query := urlparams.Encode()
+		data = strings.NewReader(query)
+	} else if reader, ok := post_data.(io.Reader); ok {
+		data = reader
+	}
+
+	req, err := http.NewRequest(method, requrl, data)
 	if err != nil {
 		return nil, err
 	}
 
-	if nil != post_data && "post" == strings.ToLower(method) {
+	if nil != data && "post" == strings.ToLower(method) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 
@@ -83,6 +98,10 @@ func (this *HttpClient) Request(method, url string, post_data io.Reader, headers
 		header := headers[0]
 		for k, v := range header {
 			req.Header.Set(k, v[0])
+			//不支持header中设置host(go 当前版本1.14.2) ???
+			if strings.ToLower(k) == "host" {
+				req.Host = v[0]
+			}
 		}
 	}
 
