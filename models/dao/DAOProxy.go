@@ -457,3 +457,34 @@ func (this *DAOProxy) GetRecords(where string, start, num int, order string, par
 
 	return list
 } // }}}
+
+//大数据下会有性能问题，请谨慎使用
+//GetList{{
+func (this *DAOProxy) GetList(where string, start, num int, order string, params ...interface{}) (int, []map[string]interface{}) {
+	idx := ""
+	if "" != this.index {
+		idx = " force key(" + this.index + ") "
+	}
+
+	if "" == where {
+		where = "1"
+	}
+
+	if "" != order {
+		where = where + " order by " + order
+	}
+
+	if num > 0 {
+		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
+	}
+
+	reader := this.GetDBReader()
+	list := reader.GetAll("select SQL_CALC_FOUND_ROWS "+this.GetFields()+" from "+this.table+idx+" where "+where, params...)
+	total, _ := strconv.Atoi(reader.GetOne("select FOUND_ROWS() as total").(string))
+
+	if len(list) > 0 && nil != this.bind {
+		this.parseRecords(list)
+	}
+
+	return total, list
+} // }}}
