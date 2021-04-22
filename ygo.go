@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -59,7 +60,7 @@ func (this *Ygo) envInit() {
 	os.Chdir(path.Dir(os.Args[0]))
 	confiPath := flag.String("f", "../conf/app.conf", "config file")
 	logPath := flag.String("o", "", "log path")
-	mode := flag.String("m", "http", "http or rpc or cli ?")
+	mode := flag.String("m", "", "http or rpc or cli ?")
 	debug := flag.Bool("d", false, "use debug mode")
 	flag.Parse()
 
@@ -78,7 +79,7 @@ func (this *Ygo) envInit() {
 	if *logPath == "" {
 		*logPath = lib.Conf.Get("log_root")
 
-		if "http" != this.Mode {
+		if "" != this.Mode && "http" != this.Mode {
 			*logPath = strings.TrimRight(*logPath, "/") + "_" + this.Mode
 		}
 	}
@@ -105,7 +106,7 @@ func (this *Ygo) AddApi(c interface{}, group ...string) {
 	this.HttpServer.AddController(c, group...)
 }
 
-//添加rcp 方法对应的controller
+//添加rpc 方法对应的controller
 func (this *Ygo) AddService(c interface{}) {
 	if this.RpcServer == nil {
 		this.initRpcServer()
@@ -135,22 +136,62 @@ func (this *Ygo) initCliServer() {
 	this.CliServer = lib.NewCliServer()
 }
 
-func (this *Ygo) Run() {
+func (this *Ygo) RunRpc() {
+	this.run(SERVER_RPC)
+}
+
+func (this *Ygo) RunHttp() {
+	this.run(SERVER_HTTP)
+}
+
+func (this *Ygo) RunCli() {
+	this.run(SERVER_CLI)
+}
+
+//支持命令行参数 -m 指定运行模式
+func (this *Ygo) Run() { // {{{
+	this.run(this.Mode)
+} // }}}
+
+func (this *Ygo) run(mode string) { // {{{
 	defer func() {
 		this.removePidFile()
 		println("======= Server Exit ======")
 	}()
 
-	println("======= " + this.Mode + " Server Start ======")
+	println("======= " + mode + " Server Start ======")
 
-	if this.Mode == SERVER_RPC {
-		this.RpcServer.Run()
-	} else if this.Mode == SERVER_CLI {
-		this.CliServer.Run()
+	if mode == SERVER_RPC {
+		if this.RpcServer != nil {
+			this.RpcServer.Run()
+		}
+	} else if mode == SERVER_HTTP {
+		if this.HttpServer != nil {
+			this.HttpServer.Run()
+		}
+	} else if mode == SERVER_CLI {
+		if this.CliServer != nil {
+			this.CliServer.Run()
+		}
 	} else {
-		this.HttpServer.Run()
+		if this.HttpServer != nil && this.RpcServer != nil {
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				this.RpcServer.Run()
+			}()
+
+			this.HttpServer.Run()
+
+			wg.Wait()
+		} else if this.HttpServer != nil {
+			this.HttpServer.Run()
+		} else if this.RpcServer != nil {
+			this.RpcServer.Run()
+		}
 	}
-}
+} // }}}
 
 //生成pid文件
 func (this *Ygo) genPidFile() {

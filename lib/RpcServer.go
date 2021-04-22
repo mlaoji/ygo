@@ -59,7 +59,7 @@ func (this *RpcServer) Run() {
 
 	endless.DefaultReadTimeOut = time.Duration(this.Timeout) * time.Millisecond
 	endless.DefaultWriteTimeOut = time.Duration(this.Timeout) * time.Millisecond
-	endless.HandleGRPC = s.Serve
+	endless.RpcServer = s
 	if 1 == Conf.GetInt("dev_mode") {
 		endless.DevMode = true
 	}
@@ -90,15 +90,12 @@ func (this *rpcHandler) Call(ctx context.Context, in *pb.Request) (*pb.Reply, er
 	method := in.Method
 	params := in.Params
 
-	//fmt.Println(method)
-	//fmt.Println(params)
-
-	res := this.ServeTCP(method, params)
+	res := this.ServeTCP(method, params, ctx)
 
 	return &pb.Reply{Response: res}, nil
 }
 
-func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string) (ret string) {
+func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string, ctx context.Context) (ret string) {
 	defer func() {
 		if err := recover(); err != nil {
 			var errmsg string
@@ -164,10 +161,11 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string) (r
 		rpc_params.Set(k, v)
 	}
 
-	in = make([]reflect.Value, 3)
+	in = make([]reflect.Value, 4)
 	in[0] = reflect.ValueOf(rpc_params)
-	in[1] = reflect.ValueOf(controller_name)
-	in[2] = reflect.ValueOf(action_name)
+	in[1] = reflect.ValueOf(ctx)
+	in[2] = reflect.ValueOf(controller_name)
+	in[3] = reflect.ValueOf(action_name)
 	method = vc.MethodByName("PrepareRpc")
 	method.Call(in)
 

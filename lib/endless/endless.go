@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
 	"log"
 	"net"
 	"net/http"
@@ -43,7 +44,7 @@ var ( // {{{
 	DefaultMaxHeaderBytes int
 	DefaultHammerTime     time.Duration
 	DefaultListenerLimit  int
-	HandleGRPC            func(s net.Listener) error
+	RpcServer             *grpc.Server
 	DevMode               bool
 
 	isChild     bool
@@ -76,7 +77,7 @@ func init() { // {{{
 
 type endlessServer struct { // {{{
 	http.Server
-	HandleGRPC       func(s net.Listener) error
+	RpcServer        *grpc.Server
 	DevMode          bool
 	ListenerLimit    int
 	EndlessListener  net.Listener
@@ -141,7 +142,7 @@ func NewServer(addr string, handler http.Handler) (srv *endlessServer) { // {{{
 	srv.Server.MaxHeaderBytes = DefaultMaxHeaderBytes
 	srv.Server.Handler = handler
 	srv.ListenerLimit = DefaultListenerLimit
-	srv.HandleGRPC = HandleGRPC
+	srv.RpcServer = RpcServer
 	srv.DevMode = DevMode
 
 	srv.BeforeBegin = func(addr string) {
@@ -202,9 +203,9 @@ down the server.
 func (srv *endlessServer) Serve() (err error) { // {{{
 	defer log.Println(syscall.Getpid(), "Serve() returning...")
 	srv.setState(STATE_RUNNING)
-	if nil != srv.HandleGRPC {
+	if nil != srv.RpcServer {
 		log.Println(syscall.Getpid(), "run with grpc handler...")
-		err = srv.HandleGRPC(srv.EndlessListener)
+		err = srv.RpcServer.Serve(srv.EndlessListener)
 	} else {
 		err = srv.Server.Serve(srv.EndlessListener)
 	}
@@ -345,6 +346,10 @@ func (srv *endlessServer) handleSignals() { // {{{
 			if err != nil {
 				log.Println("Fork err:", err)
 			}
+
+			if nil != srv.RpcServer {
+				srv.RpcServer.GracefulStop()
+			}
 		case syscall.SIGUSR1:
 			log.Println(pid, "Received SIGUSR1.")
 		case syscall.SIGUSR2:
@@ -357,9 +362,19 @@ func (srv *endlessServer) handleSignals() { // {{{
 				srv.wg.Done()
 			}
 			log.Println(pid, "Received SIGINT.")
+
+			if nil != srv.RpcServer {
+				srv.RpcServer.GracefulStop()
+			}
+
 			srv.shutdown()
 		case syscall.SIGTERM:
 			log.Println(pid, "Received SIGTERM.")
+
+			if nil != srv.RpcServer {
+				srv.RpcServer.GracefulStop()
+			}
+
 			srv.shutdown()
 		case syscall.SIGTSTP:
 			log.Println(pid, "Received SIGTSTP.")

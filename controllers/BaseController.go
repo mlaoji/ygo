@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/mlaoji/ygo/lib"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"io/ioutil"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,8 +48,11 @@ type BaseController struct {
 	R             *http.Request
 	RBody         []byte
 	IR            *iRequest
+	Ctx           context.Context
 	startTime     time.Time
 	Mode          int
+	rpcInHeaders  metadata.MD
+	rpcOutHeaders map[string]string
 	rpcContent    string
 	Controller    string
 	Action        string
@@ -111,12 +119,23 @@ func (this *BaseController) getRequestBody(r *http.Request) ([]byte, error) { //
 	return buf, nil
 } // }}}
 
-func (this *BaseController) PrepareRpc(r url.Values, controller, action string) { // {{{
+func (this *BaseController) PrepareRpc(r url.Values, ctx context.Context, controller, action string) { // {{{
 	this.prepare(r, RPC_MODE, controller, action)
 
+	this.Ctx = ctx
+
 	//rpc 接口鉴权
-	appid := this.GetString("appid")
-	secret := this.GetString("secret")
+	appid := this.GetHeader("appid")
+	secret := this.GetHeader("secret")
+
+	//todo 删除兼容
+	if appid == "" {
+		appid = this.GetString("appid")
+	}
+	if secret == "" {
+		secret = this.GetString("secret")
+	}
+
 	lib.Interceptor(secret == lib.Conf.Get("rpc_auth", "app_"+appid), lib.ERR_RPCAUTH, appid)
 } // }}}
 
@@ -140,7 +159,23 @@ func (this *BaseController) GetCookie(key string) string { // {{{
 } // }}}
 
 func (this *BaseController) GetHeader(key string) string { // {{{
-	return this.R.Header.Get(key)
+	if HTTP_MODE == this.Mode {
+		return this.R.Header.Get(key)
+	}
+
+	if RPC_MODE == this.Mode {
+		if this.rpcInHeaders == nil {
+			this.rpcInHeaders, _ = metadata.FromIncomingContext(this.Ctx)
+		}
+
+		if this.rpcInHeaders != nil {
+			if v, ok := this.rpcInHeaders[key]; ok {
+				return v[0]
+			}
+		}
+	}
+
+	return ""
 } // }}}
 
 func (this *BaseController) _getFormValue(key string) string { // {{{
@@ -287,7 +322,25 @@ func (this *BaseController) GetFile(key string) (multipart.File, *multipart.File
 } // }}}
 
 func (this *BaseController) GetIp() string { // {{{
-	return lib.GetIp(this.R)
+	if HTTP_MODE == this.Mode {
+		return lib.GetIp(this.R)
+	}
+
+	if RPC_MODE == this.Mode {
+		pr, ok := peer.FromContext(this.Ctx)
+		if !ok {
+			return ""
+		}
+
+		if pr.Addr == net.Addr(nil) {
+			return ""
+		}
+
+		addr := strings.Split(pr.Addr.String(), ":")
+		return addr[0]
+	}
+
+	return ""
 } // }}}
 
 func (this *BaseController) GetRequestUri() string { // {{{
@@ -317,7 +370,14 @@ func (this *BaseController) SetCookie(key, val string, lifetime int, options ...
 } // }}}
 
 func (this *BaseController) SetHeader(key, val string) { // {{{
-	this.RW.Header().Set(key, val)
+	if HTTP_MODE == this.Mode {
+		this.RW.Header().Set(key, val)
+	} else if RPC_MODE == this.Mode {
+		if this.rpcOutHeaders == nil {
+			this.rpcOutHeaders = map[string]string{}
+		}
+		this.rpcOutHeaders[key] = val
+	}
 } // }}}
 
 func (this *BaseController) SetHeaders(headers http.Header) { // {{{
@@ -479,6 +539,7 @@ func (this *BaseController) GenLog() map[string]interface{} { // {{{
 
 	if RPC_MODE == this.Mode && nil != this.IR {
 		delete(this.IR.Form, "secret")
+		ret["ip"] = this.GetIp()
 		ret["uri"] = this.Uri
 		ret["post"] = this.IR.Form
 	}
@@ -523,8 +584,13 @@ func (this *BaseController) Cost() int64 {
 	return time.Now().Sub(this.startTime).Nanoseconds() / 1000 / 1000
 }
 
-func (this *BaseController) GetRpcContent() string {
+func (this *BaseController) GetRpcContent() string { // {{{
+	if this.rpcOutHeaders != nil {
+		header := metadata.New(this.rpcOutHeaders)
+		grpc.SendHeader(this.Ctx, header)
+	}
+
 	return this.rpcContent
-}
+} // }}}
 
 func (this *BaseController) RenderHtml(file string) {}
