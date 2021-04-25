@@ -459,6 +459,7 @@ func (this *DAOProxy) GetRecords(where string, start, num int, order string, par
 } // }}}
 
 //大数据下会有性能问题，请谨慎使用
+//由于底层每次查询都是从连接池中获取连接，所以开启只读事务，以保证FOUND_ROWS()的两条sql使用同一连接
 //GetList{{
 func (this *DAOProxy) GetList(where string, start, num int, order string, params ...interface{}) (int, []map[string]interface{}) {
 	idx := ""
@@ -478,9 +479,13 @@ func (this *DAOProxy) GetList(where string, start, num int, order string, params
 		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
 	}
 
-	reader := this.GetDBReader()
+	reader := this.GetDBReader().Begin(true)
+	defer reader.Rollback()
+
 	list := reader.GetAll("select SQL_CALC_FOUND_ROWS "+this.GetFields()+" from "+this.table+idx+" where "+where, params...)
 	total, _ := strconv.Atoi(reader.GetOne("select FOUND_ROWS() as total").(string))
+
+	reader.Commit()
 
 	if len(list) > 0 && nil != this.bind {
 		this.parseRecords(list)

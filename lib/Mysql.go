@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
@@ -25,7 +26,7 @@ func (this *MysqlProxy) Add(conf_name string) { // {{{
 	if this.c[conf_name] == nil {
 		conf := Conf.GetAll(conf_name)
 		if 0 == len(conf) {
-			panic("Mysql 资源不存在:" + conf_name)
+			errorHandle("Mysql 资源不存在:" + conf_name)
 		}
 
 		moc, _ := strconv.Atoi(conf["max_open_conns"])
@@ -102,7 +103,7 @@ func (this *MysqlClient) Init() {
 
 	this.db, err = sql.Open("mysql", this.User+":"+this.Password+"@tcp("+this.Host+")/"+this.Database+"?charset="+this.Charset)
 	if err != nil {
-		panic(fmt.Sprintf("mysql connect error:%v", err))
+		errorHandle(fmt.Sprintf("mysql connect error:%v", err))
 	}
 
 	if this.MaxOpenConns > 0 {
@@ -121,14 +122,22 @@ func (this *MysqlClient) SetDebug(open bool) { //{{{
 	this.Debug = open
 } //}}}
 
-func (this *MysqlClient) Begin() *MysqlClient { // {{{
-	tx, err := this.db.Begin()
+func (this *MysqlClient) Begin(is_readonly bool) *MysqlClient { // {{{
+	//tx, err := this.db.Begin()
+	tx, err := this.db.BeginTx(context.Background(), &sql.TxOptions{
+		ReadOnly: is_readonly,
+	})
+
 	if err != nil {
-		panic(fmt.Sprintf("mysql trans error:%v", err))
+		errorHandle(fmt.Sprintf("mysql trans error:%v", err))
 	}
 
 	if this.Debug {
-		Logger.Debug("Begin transaction on #ID:", this.ID)
+		if is_readonly {
+			Logger.Debug("Begin readonly transaction on #ID:", this.ID)
+		} else {
+			Logger.Debug("Begin transaction on #ID:", this.ID)
+		}
 	}
 
 	return &MysqlClient{
@@ -147,7 +156,7 @@ func (this *MysqlClient) Rollback() { // {{{
 		this.intx = false
 		err := this.tx.Rollback()
 		if err != nil {
-			panic(fmt.Sprintf("mysql trans rollback error:%v", err))
+			errorHandle(fmt.Sprintf("mysql trans rollback error:%v", err))
 		}
 
 		if this.Debug {
@@ -162,7 +171,7 @@ func (this *MysqlClient) Commit() { // {{{
 		this.intx = false
 		err := this.tx.Commit()
 		if err != nil {
-			panic(fmt.Sprintf("mysql trans commit error:%v", err))
+			errorHandle(fmt.Sprintf("mysql trans commit error:%v", err))
 		}
 
 		if this.Debug {
@@ -192,7 +201,7 @@ func (this *MysqlClient) GetOne(_sql string, val ...interface{}) interface{} {
 			//fmt.Println("no data")
 			// there were no rows, but otherwise no error occurred
 		} else {
-			panic(err)
+			errorHandle(err)
 		}
 	}
 
@@ -325,7 +334,7 @@ func (this *MysqlClient) execute(_sql string, val ...interface{}) (result sql.Re
 	}
 
 	if err != nil {
-		panic(err)
+		errorHandle(err)
 	}
 
 	return result
@@ -342,16 +351,8 @@ func (this *MysqlClient) GetRow(_sql string, val ...interface{}) map[string]inte
 } // }}}
 
 func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]interface{} { //{{{
-	var start_time time.Time
+	//分析sql,如果使用了select SQL_CALC_FOUND_ROWS, 分析语句会干扰结果，所以放在真正查询的前面
 	if this.Debug {
-		start_time = time.Now()
-	}
-
-	var rows *sql.Rows
-	rows, err := this.executor.Query(_sql, val...)
-
-	if this.Debug {
-		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
 		if strings.HasPrefix(_sql, "select") {
 			expl_results := []map[string]interface{}{}
 			if this.intx {
@@ -366,14 +367,26 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 		fmt.Println("")
 	}
 
-	if err != nil {
-		panic(err)
+	var start_time time.Time
+	if this.Debug {
+		start_time = time.Now()
 	}
+
+	var rows *sql.Rows
+	rows, err := this.executor.Query(_sql, val...)
 	defer rows.Close()
+
+	if this.Debug {
+		Logger.Debug(map[string]interface{}{"tx": this.intx, "consume": time.Now().Sub(start_time).Nanoseconds() / 1000 / 1000, "sql": _sql, "val": val, "#ID": this.ID})
+	}
+
+	if err != nil {
+		errorHandle(err)
+	}
 
 	cols, err := rows.Columns()
 	if err != nil {
-		panic(err)
+		errorHandle(err)
 	}
 
 	// Make a slice for the values
@@ -394,7 +407,7 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 		// get RawBytes from data
 		err = rows.Scan(scanArgs...)
 		if err != nil {
-			panic(err.Error())
+			errorHandle(err.Error())
 		}
 
 		row := map[string]interface{}{}
@@ -416,8 +429,14 @@ func (this *MysqlClient) GetAll(_sql string, val ...interface{}) []map[string]in
 	}
 
 	if err = rows.Err(); err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
+		errorHandle(err.Error())
 	}
 
 	return data
+} // }}}
+
+func errorHandle(err interface{}) { //{{{
+	fmt.Println(err)
+	Logger.Error(err)
+	panic(err)
 } // }}}
