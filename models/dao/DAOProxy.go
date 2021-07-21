@@ -344,7 +344,7 @@ func (this *DAOProxy) AddRecord(vals interface{}) int {
 } // }}}
 
 //SetRecord {{{
-func (this *DAOProxy) SetRecord(vals interface{}, id int) int {
+func (this *DAOProxy) SetRecord(vals interface{}, id interface{}) int {
 	return this.DBWriter.Update(this.table, this.preParams(vals), this.primary+"=?", id)
 } // }}}
 
@@ -359,7 +359,7 @@ func (this *DAOProxy) ResetRecord(vals interface{}) int {
 } // }}}
 
 //GetRecord {{{
-func (this *DAOProxy) GetRecord(id int) map[string]interface{} {
+func (this *DAOProxy) GetRecord(id interface{}) map[string]interface{} {
 	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+this.primary+"=?", id)
 
 	if len(row) > 0 && nil != this.bind {
@@ -371,7 +371,7 @@ func (this *DAOProxy) GetRecord(id int) map[string]interface{} {
 } // }}}
 
 //DelRecord {{{
-func (this *DAOProxy) DelRecord(id int) int {
+func (this *DAOProxy) DelRecord(id interface{}) int {
 	return this.DBWriter.Execute("delete from "+this.table+" where "+this.primary+"=? limit 1", id)
 } // }}}
 
@@ -410,7 +410,7 @@ func (this *DAOProxy) GetCount(where string, params ...interface{}) int {
 } // }}}
 
 //Exists {{{
-func (this *DAOProxy) Exists(id int) bool {
+func (this *DAOProxy) Exists(id interface{}) bool {
 	return this.GetCount(this.primary+"=?", id) > 0
 } // }}}
 
