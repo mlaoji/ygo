@@ -12,9 +12,9 @@ import (
 
 var Logger = &FileLogger{}
 
-func NewLogger(path, name string, level int) *FileLogger {
+func NewLogger(logpath, name string, level int) *FileLogger {
 	ins := &FileLogger{}
-	ins.Init(path, name, level)
+	ins.Init(logpath, name, level)
 
 	return ins
 }
@@ -33,35 +33,44 @@ const (
 type FileLogger struct {
 	loggerMap map[string]*log.Logger
 	curDate   map[string]string
-	rootPath  string
+	logPath   string
 	logName   string
 	logLevel  int
 	lock      sync.RWMutex
 }
 
-func (this *FileLogger) Init(rootPath, logName string, logLevel int) {
-	this.rootPath = rootPath
-	this.logName = logName
+func (this *FileLogger) Init(logpath, logname string, loglevel int) { // {{{
+	this.logPath = logpath
+	this.logName = this.reviseLogName(logname)
 	this.curDate = make(map[string]string)
 	this.loggerMap = make(map[string]*log.Logger)
-	this.logLevel = logLevel
+	this.logLevel = loglevel
 
-	os.MkdirAll(this.rootPath, 0777)
-}
+	os.MkdirAll(this.logPath, 0777)
+} // }}}
 
-func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
+//格式化文件名
+func (this *FileLogger) reviseLogName(logname string) string { // {{{
+	if l := len(logname); l < 4 || logname[l-4:] != ".log" {
+		logname = logname + ".log"
+	}
+
+	return logname
+} // }}}
+
+func (this *FileLogger) getLogger(logname string) (*log.Logger, error) { // {{{
 	nowDate := time.Now().Format("20060102")
-	filePath := this.rootPath + "/" + logName + "." + nowDate
+	filePath := this.logPath + "/" + logname + "." + nowDate
 	this.lock.RLock()
-	retLogger, ok := this.loggerMap[logName]
-	curDate, ok := this.curDate[logName]
+	retLogger, ok := this.loggerMap[logname]
+	curDate, ok := this.curDate[logname]
 	if !ok || nowDate != curDate {
 		this.lock.RUnlock()
 		this.lock.Lock()
 		defer this.lock.Unlock()
 
-		retLoggerRetry, ok := this.loggerMap[logName]
-		curDateRetry, ok := this.curDate[logName]
+		retLoggerRetry, ok := this.loggerMap[logname]
+		curDateRetry, ok := this.curDate[logname]
 		//双重判断，减少抢锁
 		if !ok || nowDate != curDateRetry {
 			fd, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0777)
@@ -70,11 +79,11 @@ func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 			}
 			//创建文件的时候指定777权限不管用，所有只能在显式chmod
 			fd.Chmod(0777)
-			this.loggerMap[logName] = log.New(fd, "", 0)
-			this.curDate[logName] = nowDate
+			this.loggerMap[logname] = log.New(fd, "", 0)
+			this.curDate[logname] = nowDate
 			fmt.Println("new logger:", filePath)
 
-			retLogger = this.loggerMap[logName]
+			retLogger = this.loggerMap[logname]
 		} else {
 			retLogger = retLoggerRetry
 		}
@@ -83,14 +92,14 @@ func (this *FileLogger) getLogger(logName string) (*log.Logger, error) {
 	}
 
 	return retLogger, nil
-}
+} // }}}
 
-func (this *FileLogger) writeLog(logName string, v ...interface{}) {
-	go this._writeLog(logName, v...)
-}
+func (this *FileLogger) writeLog(logname string, v ...interface{}) { // {{{
+	go this._writeLog(logname, v...)
+} // }}}
 
-func (this *FileLogger) _writeLog(logName string, v ...interface{}) { // {{{
-	logger, err := this.getLogger(logName)
+func (this *FileLogger) _writeLog(logname string, v ...interface{}) { // {{{
+	logger, err := this.getLogger(logname)
 	if err != nil {
 		fmt.Println("log failed", err)
 		return
@@ -157,6 +166,6 @@ func (this *FileLogger) Error(v ...interface{}) { // {{{
 	this.writeLog(this.logName+".error", v...)
 } // }}}
 
-func (this *FileLogger) Other(logname string, v ...interface{}) {
-	this.writeLog(logname, v...)
-}
+func (this *FileLogger) Other(logname string, v ...interface{}) { // {{{
+	this.writeLog(this.reviseLogName(logname), v...)
+} // }}}
