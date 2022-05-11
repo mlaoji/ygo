@@ -1,12 +1,13 @@
 package tx
 
 import (
-	"github.com/mlaoji/ygo/lib"
+	"github.com/mlaoji/ygo/x"
+	"github.com/mlaoji/ygo/x/db"
 )
 
 //opts: confName, [isReadOnly], 最后一个参数如果为bool值，则表示是否开启只读事务
-func TransBegin(opts ...interface{}) *lib.MysqlClient {
-	conf_name := "mysql_master"
+func TransBegin(opts ...interface{}) db.DBClient {
+	conf_name := "db_master"
 	is_readonly := false
 
 	l := len(opts)
@@ -20,6 +21,6 @@ func TransBegin(opts ...interface{}) *lib.MysqlClient {
 		}
 	}
 
-	tx := lib.Mysql.Get(conf_name)
+	tx := x.DB.Get(conf_name)
 	return tx.Begin(is_readonly)
 }

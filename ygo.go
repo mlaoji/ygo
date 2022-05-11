@@ -4,7 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/mlaoji/ygo/controllers"
-	"github.com/mlaoji/ygo/lib"
+	"github.com/mlaoji/ygo/x"
+	"github.com/mlaoji/ygo/x/endless"
 	"io/ioutil"
 	"os"
 	"path"
@@ -15,17 +16,16 @@ import (
 )
 
 const (
-	SYSTEM_VERSION = "v0.1.1"
+	SYSTEM_VERSION = "v1.0"
 	SERVER_HTTP    = "http"
 	SERVER_RPC     = "rpc"
+	SERVER_TCP     = "tcp"
+	SERVER_WS      = "ws"
 	SERVER_CLI     = "cli"
 )
 
 type Ygo struct {
-	Mode       string
-	HttpServer *lib.HttpServer
-	RpcServer  *lib.RpcServer
-	CliServer  *lib.CliServer
+	Mode []string
 }
 
 func NewYgo() *Ygo {
@@ -35,7 +35,7 @@ func NewYgo() *Ygo {
 	return ygo
 }
 
-func (this *Ygo) Init() {
+func (this *Ygo) Init() { // {{{
 	logo := `
 
     _/      _/    _/_/_/    _/_/
@@ -53,87 +53,77 @@ func (this *Ygo) Init() {
 
 	this.envInit()
 	this.genPidFile()
-}
+} // }}}
 
 //初始化
-func (this *Ygo) envInit() {
+func (this *Ygo) envInit() { // {{{
+
 	os.Chdir(path.Dir(os.Args[0]))
-	confiPath := flag.String("f", "../conf/app.conf", "config file")
+	configFile := flag.String("f", "", "config file")
 	logPath := flag.String("o", "", "log path")
-	mode := flag.String("m", "", "http or rpc or cli ?")
+	appRoot := flag.String("t", "", "app root path")
+	mode := flag.String("m", "", "run mode, http|rpc|tcp|ws|cli") // 支持同时运行多个逗号分隔
 	debug := flag.Bool("d", false, "use debug mode")
+
 	flag.Parse()
 
 	controllers.DEBUG = *debug
 
-	err := lib.Conf.Init(*confiPath)
+	config, err := x.NewConfig(*configFile)
 	if nil != err {
 		fmt.Println("Error: ", err)
 		os.Exit(0)
 	}
 
+	x.Conf = config
+
 	if *mode != "" {
-		this.Mode = *mode
+		this.Mode = strings.Split(*mode, ",")
+	}
+
+	if *appRoot != "" {
+		x.AppRoot = *appRoot
 	}
 
 	if *logPath == "" {
-		*logPath = lib.Conf.Get("log_root")
-
-		if "" != this.Mode && "http" != this.Mode {
-			*logPath = strings.TrimRight(*logPath, "/") + "_" + this.Mode
-		}
+		*logPath = x.Conf.Get("log_root")
 	}
 
-	log_level := lib.Conf.GetInt("log_level")
+	log_level := x.Conf.GetInt("log_level")
 	if *debug {
 		log_level = 0
 	}
 
-	lib.Logger.Init(*logPath, lib.Conf.Get("log_name"), log_level)
+	x.Logger.Init(*logPath, x.Conf.Get("log_name"), log_level)
 
-	lib.LocalCache.Init()
+	x.LocalCache = x.NewLocalCache()
+	fmt.Println("LocalCache init")
 
 	fmt.Println("run cmd: ", os.Args)
 	fmt.Println("time: ", time.Now().Format("2006-01-02 15:04:05"))
-}
+} // }}}
 
-//添加http 方法对应的controller, 支持分组; 默认url路径: controller/action, 分组时路径: group/controller/action
+//添加http 方法对应的controller实例, 支持分组; 默认url路径: controller/action, 分组时路径: group/controller/action
 func (this *Ygo) AddApi(c interface{}, group ...string) {
-	if this.HttpServer == nil {
-		this.initHttpServer()
-	}
-
-	this.HttpServer.AddController(c, group...)
+	x.AddApi(c, group...)
 }
 
-//添加rpc 方法对应的controller
+//添加rpc 方法对应的controller实例
 func (this *Ygo) AddService(c interface{}) {
-	if this.RpcServer == nil {
-		this.initRpcServer()
-	}
-
-	this.RpcServer.AddController(c)
+	x.AddService(c)
 }
 
-//添加cli 方法对应的controller
+//添加cli 方法对应的controller实例
 func (this *Ygo) AddCli(c interface{}) {
-	if this.CliServer == nil {
-		this.initCliServer()
-	}
-
-	this.CliServer.AddController(c)
+	x.AddCli(c)
 }
 
-func (this *Ygo) initHttpServer() {
-	this.HttpServer = lib.NewHttpServer("", lib.Conf.GetInt("http_port"), lib.Conf.GetInt("http_timeout"), lib.Conf.GetBool("pprof_enable"))
+func (this *Ygo) RunTcp() {
+	this.run(SERVER_TCP)
 }
 
-func (this *Ygo) initRpcServer() {
-	this.RpcServer = lib.NewRpcServer(lib.Conf.GetInt("rpc_port"), lib.Conf.GetInt("rpc_timeout"), lib.Conf.GetBool("rpc_pprof_enable"))
-}
-
-func (this *Ygo) initCliServer() {
-	this.CliServer = lib.NewCliServer()
+func (this *Ygo) RunWebsocket() {
+	this.run(SERVER_WS)
 }
 
 func (this *Ygo) RunRpc() {
@@ -149,60 +139,104 @@ func (this *Ygo) RunCli() {
 }
 
 //支持命令行参数 -m 指定运行模式
-func (this *Ygo) Run() { // {{{
-	this.run(this.Mode)
-} // }}}
+func (this *Ygo) Run() {
+	this.run(this.Mode...)
+}
 
-func (this *Ygo) run(mode string) { // {{{
+func (this *Ygo) run(modes ...string) { // {{{
 	defer func() {
 		this.removePidFile()
-		println("======= Server Exit ======")
+		fmt.Println("======= Server Exit ======")
 	}()
 
-	println("======= " + mode + " Server Start ======")
+	if len(modes) == 0 {
+		fmt.Println("Error: 未指定运行模式")
+		os.Exit(0)
+	}
 
-	if mode == SERVER_RPC {
-		if this.RpcServer != nil {
-			this.RpcServer.Run()
-		}
-	} else if mode == SERVER_HTTP {
-		if this.HttpServer != nil {
-			this.HttpServer.Run()
-		}
-	} else if mode == SERVER_CLI {
-		if this.CliServer != nil {
-			this.CliServer.Run()
-		}
-	} else {
-		if this.HttpServer != nil && this.RpcServer != nil {
-			var wg sync.WaitGroup
+	if x.Conf.Get("env_mode") == "DEV" {
+		endless.DevMode = true
+	}
+
+	//是否监听status
+	run_moniter := true
+
+	var wg sync.WaitGroup
+	for _, mode := range modes { // {{{
+
+		switch mode {
+		case "http":
+			run_moniter = false
+
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				this.RpcServer.Run()
+				x.NewHttpServer(
+					x.Conf.Get("http_addr"),
+					x.Conf.GetInt("http_port"),
+					x.Conf.GetInt("http_timeout"),
+					x.Conf.GetBool("static_enable"),
+					x.Conf.Get("static_path"),
+					x.Conf.Get("static_root"),
+				).Run()
 			}()
 
-			this.HttpServer.Run()
+		case "rpc":
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				x.NewRpcServer(x.Conf.Get("rpc_addr"), x.Conf.GetInt("rpc_port")).Run()
+			}()
 
-			wg.Wait()
-		} else if this.HttpServer != nil {
-			this.HttpServer.Run()
-		} else if this.RpcServer != nil {
-			this.RpcServer.Run()
+		case "tcp":
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				x.NewTcpServer(x.Conf.Get("tcp_addr"), x.Conf.GetInt("tcp_port")).Run()
+			}()
+
+		case "ws":
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				x.NewWebsocketServer(x.Conf.Get("ws_addr"), x.Conf.GetInt("ws_port"), x.Conf.GetInt("ws_timeout")).Run()
+			}()
+
+		case "cli":
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				x.NewCliServer().Run()
+			}()
+
+		default:
+			fmt.Println("Error: 未指定正确的运行模式")
+			os.Exit(0)
 		}
+
+		fmt.Println("======= " + mode + " Server Start ======")
+
+	} // }}}
+
+	monitor_port := x.Conf.Get("monitor_port")
+	if "" != monitor_port && run_moniter {
+		go x.RunMonitor(monitor_port)
 	}
+
+	wg.Wait()
+
 } // }}}
 
 //生成pid文件
-func (this *Ygo) genPidFile() {
+func (this *Ygo) genPidFile() { // {{{
 	pid := os.Getpid()
 	pidString := strconv.Itoa(pid)
-	ioutil.WriteFile(lib.Conf.Get("app_pid_file"), []byte(pidString), 0777)
+	ioutil.WriteFile(x.Conf.Get("app_pid_file"), []byte(pidString), 0777)
 
 	fmt.Println("pid: ", pidString)
-}
+} // }}}
 
 //删除pid文件
 func (this *Ygo) removePidFile() {
-	os.Remove(lib.Conf.Get("app_pid_file"))
+	os.Remove(x.Conf.Get("app_pid_file"))
 }

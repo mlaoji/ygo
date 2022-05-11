@@ -1,0 +1,243 @@
+#!/bin/bash
+cd `dirname $0`
+
+cd ..
+
+dir=`pwd`
+app=`basename $dir`
+
+function showHelp
+{
+    printf "Usage: $0 <options>\n" 
+    printf "Options:
+    -f, --force \t overwrite
+    -a, --all   \t generate model and dao file (by default)
+    -m, --model \t generate model file only
+    -d, --dao   \t generate dao file only
+    -t, --table string\t table name
+    -p, --pk string\t primary key, default: id
+    -n, --num int\t hash num, slice the table by the specified number, default: 1\n"
+}
+
+while getopts "famdht:p:n:" arg #选项后面的冒号表示该选项需要参数
+do
+    case $arg in #参数值存在$OPTARG中
+        f)  
+        is_force=Y
+        ;;  
+        a)
+        gen_model=Y
+        gen_dao=Y
+        ;;
+        m)
+        gen_model=Y
+        ;;  
+        d)
+        gen_dao=Y
+        ;; 
+        t)
+        table_name=$OPTARG
+        ;; 
+        p)
+        pk_name=$OPTARG
+        ;;
+        n)
+        hash_num=$OPTARG
+        ;;
+        h)
+        showHelp
+        exit 1
+        ;; 
+        ?)  #当有不认识的选项的时候arg为?
+        echo "unkonw argument"
+        showHelp
+        exit 1
+        ;;  
+    esac
+done
+
+if [  "" = "$table_name" ]; then
+    showHelp
+    exit 1
+fi
+
+if [ "" = "$gen_model" ] && [ "" == "$gen_dao" ]; then
+    gen_model=Y
+    gen_dao=Y
+fi
+
+if [ "" = "$pk_name" ]; then
+    pk_name="id"
+fi
+
+function tocamel {
+#{{{
+    name=$1
+
+    OLD_IFS="$IFS"
+    IFS="_"
+    arr=($name)
+    IFS="$OLD_IFS"
+
+    camel=""
+    for s in ${arr[@]}
+    do
+        camel="$camel"$(ucfirst $s)
+    done
+
+    echo $camel
+}
+#}}}
+
+function ucfirst {
+#{{{
+    name=`echo $1 | tr '[A-Z]' '[a-z]'`
+    first_char=${name:0:1}
+    other_chars=${name:1}
+    echo `echo $first_char| tr '[a-z]' '[A-Z]'`$other_chars
+}
+#}}}
+
+model_name=$(tocamel $table_name)
+tbl_name=`echo $table_name | tr '[A-Z]' '[a-z]'`
+
+ROOT_DIR=`pwd`
+
+model_dir=$ROOT_DIR/src/models
+model_file=$model_dir/$model_name.go
+dao_file=$model_dir/dao/DAO$model_name.go
+
+
+function genModel {
+#{{{
+echo "package models" >> $model_file
+echo "" >> $model_file
+echo "//此文件是由 tools/genModel 自动生成, 可按需要修改" >> $model_file
+echo "" >> $model_file
+echo "import (" >> $model_file
+echo "	\"$app/src/models/dao\"" >> $model_file
+echo ")" >> $model_file
+echo "" >> $model_file
+echo "func ${model_name}() *${model_name}Model {" >> $model_file
+echo "	return &${model_name}Model{}" >> $model_file
+echo "}" >> $model_file
+echo "" >> $model_file
+echo "type ${model_name}Model struct {}" >> $model_file
+echo "" >> $model_file
+echo "func (this *${model_name}Model) Get${model_name}Info(id int) (map[string]interface{}) { // {{{" >> $model_file
+if [ "" != "$hash_num" ] && [ $hash_num > 1 ];then
+echo "	return dao.NewDAO${model_name}(id).GetRecord(id)" >> $model_file
+else
+echo "	return dao.NewDAO${model_name}().GetRecord(id)" >> $model_file
+fi
+echo "} //}}}" >> $model_file
+}
+#}}}
+
+
+function genDao {
+#{{{
+echo "package dao" >> $dao_file
+echo "" >> $dao_file
+echo "//此文件是由 tools/genModel 自动生成, 可按需要修改" >> $dao_file
+echo "" >> $dao_file
+echo "import (" >> $dao_file
+echo "	\"github.com/mlaoji/ygo/x\"" >> $dao_file
+echo "	\"github.com/mlaoji/ygo/models/dao\"" >> $dao_file
+echo ")" >> $dao_file
+echo "" >> $dao_file
+if [ "" != "$hash_num" ] && [ $hash_num > 1 ];then
+echo "func NewDAO${model_name}(id int, tx ...x.DBClient) *DAO${model_name} {" >> $dao_file
+else
+echo "func NewDAO${model_name}(tx ...x.DBClient) *DAO${model_name} {" >> $dao_file
+fi
+
+echo "	ins := &DAO${model_name}{}" >> $dao_file
+if [ "" != "$hash_num" ] && [ $hash_num > 1 ];then
+echo "	ins.Init(id, tx...)" >> $dao_file
+else
+echo "	ins.Init(tx...)" >> $dao_file
+fi
+
+echo "	return ins" >> $dao_file
+echo "}" >> $dao_file
+echo "" >> $dao_file
+echo "type DAO${model_name} struct {" >> $dao_file
+echo "	dao.DAOProxy" >> $dao_file
+echo "}" >> $dao_file
+echo "" >> $dao_file
+
+if [ "" != "$hash_num" ] && [ $hash_num > 1 ];then
+echo "func (this *DAO${model_name}) Init(id int, tx ...x.DBClient) {" >> $dao_file
+else
+echo "func (this *DAO${model_name}) Init(tx ...x.DBClient) {" >> $dao_file
+fi
+echo "	if len(tx) > 0 {" >> $dao_file
+echo "		this.DAOProxy.InitTx(tx[0])" >> $dao_file
+echo "	} else {" >> $dao_file
+echo "		this.DAOProxy.Init()" >> $dao_file
+echo "	}" >> $dao_file
+
+if [ "" != "$hash_num" ] && [ $hash_num > 1 ];then
+echo "	this.SetTable(\"${tbl_name}_\" + x.ToString(id%$hash_num))" >> $dao_file
+else
+echo "	this.SetTable(\"${tbl_name}\")" >> $dao_file
+fi
+echo "	this.SetPrimary(\"$pk_name\")" >> $dao_file
+echo "}" >> $dao_file
+}
+#}}}
+
+       
+if [ "$gen_model" = "Y" ]; then
+    if test -e $model_file ;then
+        echo "file [$model_file] exists!"
+
+        if [ "$is_force" = "Y" ]; then
+            mv $model_file $model_file.bak
+            echo "backup file saved at [$model_file.bak]"
+            genModel
+            echo "regenerated model file $model_file"
+            echo "success!"
+        fi
+    else
+        mkdir -p $model_dir
+        genModel
+
+        if test -e $model_file; then
+            echo "generated model file $model_file"
+            echo "success!"
+        fi
+    fi
+fi
+
+if [ "$gen_dao" = "Y" ]; then
+
+    if test -e $dao_file; then
+        echo "file [$dao_file] exists!"
+
+        if [ "$is_force" = "Y" ]; then
+            mv $dao_file $dao_file.bak
+            echo "backup file saved at [$dao_file.bak]"
+            genDao
+            echo "regenerated dao file $dao_file"
+            echo "success!"
+
+            echo "提醒:自动生成的文件中，包名默认为$app, 若不指定主键，默认主键为‘id’，请修改成您需要的值!!!"
+        fi
+
+    else
+        mkdir -p "$model_dir/dao"
+        genDao
+
+        if test -e $dao_file; then
+            echo "generated dao file $dao_file"
+            echo "success!"
+
+            echo "提醒:自动生成的文件中，包名默认为$app, 若不指定主键，默认主键为‘id’，请修改成您需要的值!!!"
+        fi
+    fi
+fi
+
+
+

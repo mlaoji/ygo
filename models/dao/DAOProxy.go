@@ -3,7 +3,9 @@ package dao
 import (
 	"bytes"
 	"fmt"
-	"github.com/mlaoji/ygo/lib"
+	"github.com/mlaoji/ygo/x"
+	"github.com/mlaoji/ygo/x/db"
+	"github.com/mlaoji/ygo/x/yaml"
 	"math/rand"
 	"reflect"
 	"strconv"
@@ -12,20 +14,23 @@ import (
 )
 
 type DAOProxy struct {
-	DBWriter, DBReader *lib.MysqlClient
+	DBWriter, DBReader db.DBClient
 	table              string
 	primary            string
 	defaultFields      string //默认字段,逗号分隔
 	fields             string //通过setFields方法指定的字段,逗号分隔,只能通过getFields使用一次
 	countField         string //getCount方法使用的字段
 	index              string //查询使用的索引
-	forceMaster        bool   //强制使用主库读，只能通过useMaster 使用一次
+	limit              string
+	autoOrder          bool //是否自动排序(默认按自动主键倒序排序)
+	order              string
+	forceMaster        bool //强制使用主库读，只能通过useMaster 使用一次
 	bind               interface{}
 }
 
 func (this *DAOProxy) Init(conf ...string) { //{{{
-	master_conf := "mysql_master"
-	slave_conf := "mysql_slave"
+	master_conf := "db_master"
+	slave_conf := "db_slave"
 
 	if len(conf) > 0 {
 		master_conf = conf[0]
@@ -36,20 +41,24 @@ func (this *DAOProxy) Init(conf ...string) { //{{{
 		slave_conf = conf[1]
 	}
 
-	slave_confs := lib.Conf.GetSlice(slave_conf, "slaves")
-	if len(slave_confs) > 0 {
+	slave_confs := x.Conf.GetNode(slave_conf)
+	if nil == slave_confs {
+		slave_conf = master_conf
+	} else if slave_list, ok := slave_confs.(yaml.YamlList); ok {
 		rand.Seed(int64(time.Now().Nanosecond()))
-		idx := rand.Intn(len(slave_confs))
-		slave_conf = slave_confs[idx]
+		idx := rand.Intn(len(slave_list))
+		slave_conf = fmt.Sprintf("%s[%d]", slave_conf, idx)
 	}
 
 	this.defaultFields = "*"
-	this.DBWriter = lib.Mysql.Get(master_conf)
-	this.DBReader = lib.Mysql.Get(slave_conf)
+	this.autoOrder = true
+	this.DBWriter = x.DB.Get(master_conf)
+	this.DBReader = x.DB.Get(slave_conf)
 } // }}}
 
-func (this *DAOProxy) InitTx(tx *lib.MysqlClient) { //使用事务{{{
+func (this *DAOProxy) InitTx(tx db.DBClient) { //使用事务{{{
 	this.defaultFields = "*"
+	this.autoOrder = true
 	this.DBWriter = tx
 	this.DBReader = tx
 } // }}}
@@ -70,12 +79,12 @@ func (this *DAOProxy) GetPrimary() string {
 	return this.primary
 }
 
-func (this *DAOProxy) SetCountField(field string) *DAOProxy {
+func (this *DAOProxy) SetCountField(field string) *DAOProxy { // {{{
 	this.countField = field
 	return this
-}
+} // }}}
 
-func (this *DAOProxy) GetCountField() string {
+func (this *DAOProxy) GetCountField() string { // {{{
 	field := "1"
 	if "" != this.countField {
 		field = this.countField
@@ -83,12 +92,12 @@ func (this *DAOProxy) GetCountField() string {
 	}
 
 	return field
-}
+} // }}}
 
-func (this *DAOProxy) SetDefaultFields(fields string) *DAOProxy {
+func (this *DAOProxy) SetDefaultFields(fields string) *DAOProxy { // {{{
 	this.defaultFields = fields
 	return this
-}
+} // }}}
 
 //可在读方法前使用，且仅对本次查询起作用，如: NewDAOUser().SetFields("uid").GetRecord(uid)
 func (this *DAOProxy) SetFields(fields string) *DAOProxy {
@@ -96,7 +105,7 @@ func (this *DAOProxy) SetFields(fields string) *DAOProxy {
 	return this
 }
 
-func (this *DAOProxy) GetFields() string {
+func (this *DAOProxy) GetFields() string { // {{{
 	fields := this.defaultFields
 	if "" != this.fields {
 		fields = this.fields
@@ -104,14 +113,20 @@ func (this *DAOProxy) GetFields() string {
 	}
 
 	return fields
-}
+} // }}}
 
 func (this *DAOProxy) UseIndex(idx string) *DAOProxy {
 	this.index = idx
 	return this
 }
 
-func (this *DAOProxy) UseMaster(flag ...bool) *DAOProxy {
+func (this *DAOProxy) getIndex() string { // {{{
+	idx := this.index
+	this.index = ""
+	return idx
+} // }}}
+
+func (this *DAOProxy) UseMaster(flag ...bool) *DAOProxy { // {{{
 	use := true
 	if len(flag) > 0 {
 		use = flag[0]
@@ -119,9 +134,54 @@ func (this *DAOProxy) UseMaster(flag ...bool) *DAOProxy {
 
 	this.forceMaster = use
 	return this
-}
+} // }}}
 
-func (this *DAOProxy) GetDBReader() *lib.MysqlClient {
+func (this *DAOProxy) SetAutoOrder(flag ...bool) *DAOProxy { // {{{
+	use := true
+	if len(flag) > 0 {
+		use = flag[0]
+	}
+
+	this.autoOrder = use
+	return this
+} // }}}
+
+func (this *DAOProxy) Order(order string) *DAOProxy { // {{{
+	this.order = order
+	this.autoOrder = false
+	return this
+} // }}}
+
+func (this *DAOProxy) getOrder() string { // {{{
+	order := this.order
+	if "" == order && this.autoOrder {
+		order = this.GetPrimary() + " desc"
+	}
+
+	this.order = ""
+	this.autoOrder = true
+
+	return order
+} // }}}
+
+func (this *DAOProxy) Limit(limit int, limits ...int) *DAOProxy { // {{{
+	this.limit = x.ToString(limit)
+
+	if len(limits) > 0 {
+		this.limit = this.limit + "," + x.ToString(limits[0])
+	}
+
+	return this
+} // }}}
+
+func (this *DAOProxy) getLimit() string { // {{{
+	limit := this.limit
+	this.limit = ""
+
+	return limit
+} // }}}
+
+func (this *DAOProxy) GetDBReader() db.DBClient { // {{{
 	if this.forceMaster {
 		this.forceMaster = false
 
@@ -129,7 +189,7 @@ func (this *DAOProxy) GetDBReader() *lib.MysqlClient {
 	}
 
 	return this.DBReader
-}
+} // }}}
 
 //必须为指针 单条记录指向 struct , 多条记录指向[]struct 或 []*struct
 //使用: NewDAOUser().bind([]struct).GetRecords(...
@@ -143,8 +203,7 @@ func (this *DAOProxy) Bind(objPtr interface{}) *DAOProxy { // {{{
 	return this
 } // }}}
 
-//parseFields {{{
-func (this *DAOProxy) parseFields(objPtr interface{}) {
+func (this *DAOProxy) parseFields(objPtr interface{}) { //{{{
 	objVal := reflect.Indirect(reflect.ValueOf(objPtr))
 	data := map[string]interface{}{}
 	var valPtr interface{}
@@ -184,13 +243,11 @@ func (this *DAOProxy) parseFields(objPtr interface{}) {
 	this.fields = buf.String()
 } // }}}
 
-//parseRecord{{{
-func (this *DAOProxy) parseRecord(data map[string]interface{}) {
+func (this *DAOProxy) parseRecord(data map[string]interface{}) { //{{{
 	this.Fillin(this.bind, data)
 } // }}}
 
-//parseRecords{{{
-func (this *DAOProxy) parseRecords(data []map[string]interface{}) {
+func (this *DAOProxy) parseRecords(data []map[string]interface{}) { //{{{
 	rowsSlicePtr := this.bind
 	sliceValue := reflect.Indirect(reflect.ValueOf(rowsSlicePtr))
 	if sliceValue.Kind() != reflect.Slice {
@@ -280,24 +337,23 @@ func (this *DAOProxy) Fillin(obj interface{}, data map[string]interface{}) { // 
 	}
 } // }}}
 
-//preParams {{{
 //struct2Map
-func (this *DAOProxy) preParams(obj interface{}) map[string]interface{} {
+func (this *DAOProxy) preParams(obj interface{}) map[string]interface{} { //{{{
+	if p, ok := obj.(map[string]interface{}); ok {
+		return p
+	}
+
 	objVal := reflect.ValueOf(obj)
 
 	if objVal.Kind() == reflect.Ptr {
 		objVal = objVal.Elem()
 	}
 
-	t := objVal.Type()
-
-	if objVal.Kind() == reflect.Map { //map[string]interface{}
-		return objVal.Interface().(map[string]interface{})
-	}
-
 	if objVal.Kind() != reflect.Struct {
 		panic("need a [map or Struct ] or a pointer to [map or Struct ]")
 	}
+
+	t := objVal.Type()
 
 	var data = make(map[string]interface{})
 
@@ -317,10 +373,67 @@ func (this *DAOProxy) preParams(obj interface{}) map[string]interface{} {
 	return data
 } // }}}
 
-//以无引号方式代入值,谨慎使用！！！
-func (this *DAOProxy) FuncParam(param interface{}) string { //{{{
-	return this.DBReader.FuncParam(param)
-} // }}}
+//解析where条件
+//例1:parseParams("x=? and y=?", 1, 2)
+//例2:parseParams("x=? and y=?", []interface{}{1,2}) 等价于 parseParams("a=? and b=?", 1, 2)
+//例3:parseParams(map[string]interface{}{"a":1,"b":2}) 等价于 parseParams("a=? and b=?", 1, 2)
+//例4:parseParams(map[string]interface{}{"a":1,"b":[]interface{}{2, 3}}) 等价于 parseParams("a=? and b in ('2','3')", 1)
+func (this *DAOProxy) parseParams(params ...interface{}) (string, []interface{}) { //{{{
+	where := ""
+	values := []interface{}{}
+
+	l := len(params)
+	if l > 0 {
+		switch val := params[0].(type) {
+		case string:
+			where = val
+			values = params[1:]
+			if l == 2 {
+				ptype := reflect.TypeOf(params[1]).Kind()
+				if ptype == reflect.Slice || ptype == reflect.Array {
+					nvals := []interface{}{}
+					nval := reflect.ValueOf(params[1])
+					nval = nval.Convert(nval.Type())
+
+					for i := 0; i < nval.Len(); i++ {
+						nvals = append(nvals, nval.Index(i).Interface())
+					}
+					values = nvals
+				}
+			}
+		case map[string]interface{}:
+			for k, v := range val {
+				if where != "" {
+					where = where + " and "
+				}
+
+				ptype := reflect.TypeOf(v).Kind()
+				if ptype == reflect.Slice || ptype == reflect.Array {
+					nval := reflect.ValueOf(v)
+					nval = nval.Convert(nval.Type())
+
+					where = where + "`" + k + "` in ("
+
+					for i := 0; i < nval.Len(); i++ {
+						if i > 0 {
+							where = where + ","
+						}
+						where = where + "'" + strings.ReplaceAll(fmt.Sprint(nval.Index(i).Interface()), `'`, `\'`) + "'"
+					}
+					where = where + ")"
+				} else {
+					where = where + "`" + k + "`=?"
+					values = append(values, v)
+				}
+			}
+		default:
+			where = fmt.Sprint(params[0])
+			values = params[1:]
+		}
+	}
+
+	return where, values
+} //}}}
 
 func (this *DAOProxy) Execute(sql string, params ...interface{}) int { //{{{
 	return this.DBWriter.Execute(sql, params...)
@@ -338,29 +451,24 @@ func (this *DAOProxy) Query(sql string, params ...interface{}) []map[string]inte
 } // }}}
 
 //AddRecord、SetRecord、ResetRecord 支持传入map[string]interface{} 和 struct 两种类型参数
-//AddRecord {{{
-func (this *DAOProxy) AddRecord(vals interface{}) int {
+func (this *DAOProxy) AddRecord(vals interface{}) int { //{{{
 	return this.DBWriter.Insert(this.table, this.preParams(vals))
 } // }}}
 
-//SetRecord {{{
-func (this *DAOProxy) SetRecord(vals interface{}, id interface{}) int {
+func (this *DAOProxy) SetRecord(vals interface{}, id interface{}) int { //{{{
 	return this.DBWriter.Update(this.table, this.preParams(vals), this.primary+"=?", id)
 } // }}}
 
-//SetRecordBy {{{
-func (this *DAOProxy) SetRecordBy(vals interface{}, where string, params ...interface{}) int {
+func (this *DAOProxy) SetRecordBy(vals interface{}, where string, params ...interface{}) int { //{{{
 	return this.DBWriter.Update(this.table, this.preParams(vals), where, params...)
 } // }}}
 
-//ResetRecord {{{
-func (this *DAOProxy) ResetRecord(vals interface{}) int {
+func (this *DAOProxy) ResetRecord(vals interface{}) int { //{{{
 	return this.DBWriter.Replace(this.table, this.preParams(vals))
 } // }}}
 
-//GetRecord {{{
-func (this *DAOProxy) GetRecord(id interface{}) map[string]interface{} {
-	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+this.primary+"=?", id)
+func (this *DAOProxy) GetRecord(id interface{}) map[string]interface{} { //{{{
+	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+this.primary+"=?  limit 1", id)
 
 	if len(row) > 0 && nil != this.bind {
 		this.parseRecord(row)
@@ -370,58 +478,87 @@ func (this *DAOProxy) GetRecord(id interface{}) map[string]interface{} {
 
 } // }}}
 
-//DelRecord {{{
-func (this *DAOProxy) DelRecord(id interface{}) int {
+func (this *DAOProxy) DelRecord(id interface{}) int { //{{{
 	return this.DBWriter.Execute("delete from "+this.table+" where "+this.primary+"=? limit 1", id)
 } // }}}
 
-//DelRecordBy {{{
-func (this *DAOProxy) DelRecordBy(where string, params ...interface{}) int {
-	return this.DBWriter.Execute("delete from "+this.table+" where "+where+" limit 1", params...)
+func (this *DAOProxy) DelRecordBy(params ...interface{}) int { //{{{
+	where, values := this.parseParams(params...)
+	return this.DBWriter.Execute("delete from "+this.table+" where "+where+" limit 1", values...)
 } // }}}
 
-//DelRecords {{{ Is Dangerous!
-func (this *DAOProxy) DelRecords(where string, params ...interface{}) int {
-	return this.DBWriter.Execute("delete from "+this.table+" where "+where, params...)
+//Is Dangerous!
+func (this *DAOProxy) DelRecords(params ...interface{}) int { //{{{
+	where, values := this.parseParams(params...)
+	return this.DBWriter.Execute("delete from "+this.table+" where "+where, values...)
 } // }}}
 
-func (this *DAOProxy) GetOne(field, where string, params ...interface{}) interface{} { //{{{
-	if "" == where {
-		where = "1"
+func (this *DAOProxy) GetOne(field string, params ...interface{}) interface{} { //{{{
+	where, values := this.parseParams(params...)
+	if "" != where {
+		where = " where " + where
 	}
 
-	return this.GetDBReader().GetOne("select "+field+" from "+this.table+" where "+where, params...)
+	return this.GetDBReader().GetOne("select "+field+" from "+this.table+where+" limit 1", values...)
 } // }}}
 
-//GetCount {{{
-func (this *DAOProxy) GetCount(where string, params ...interface{}) int {
-	idx := ""
-	if "" != this.index {
-		idx = " force key(" + this.index + ") "
+//alias for GetOne
+func (this *DAOProxy) GetValue(field string, params ...interface{}) interface{} { //{{{
+	return this.GetOne(field, params...)
+} // }}}
+
+func (this *DAOProxy) GetValues(field string, params ...interface{}) []interface{} { //{{{
+	where, values := this.parseParams(params...)
+	if "" != where {
+		where = " where " + where
 	}
 
-	if "" == where {
-		where = "1"
+	list := this.GetDBReader().GetAll("select "+field+" from "+this.table+where, values...)
+	return x.ArrayColumn(list, field).([]interface{})
+} // }}}
+
+func (this *DAOProxy) GetValuesMap(keyfield, valfield string, params ...interface{}) x.MAP { //{{{
+	where, values := this.parseParams(params...)
+	if "" != where {
+		where = " where " + where
 	}
 
-	total, _ := strconv.Atoi(this.GetDBReader().GetOne("select count("+this.GetCountField()+") as total from "+this.table+idx+" where "+where, params...).(string))
+	list := this.GetDBReader().GetAll("select "+keyfield+", "+valfield+" from "+this.table+where, values...)
+	return x.ArrayColumn(list, valfield, keyfield).(x.MAP)
+} // }}}
+
+func (this *DAOProxy) GetCount(params ...interface{}) int { //{{{
+	where, values := this.parseParams(params...)
+	if "" != where {
+		where = " where " + where
+	}
+
+	fidx := ""
+	idx := this.getIndex()
+	if "" != idx {
+		fidx = " force key(" + idx + ") "
+	}
+
+	total, _ := strconv.Atoi(this.GetDBReader().GetOne("select count("+this.GetCountField()+") as total from "+this.table+fidx+where+" limit 1", values...).(string))
 
 	return total
 } // }}}
 
-//Exists {{{
-func (this *DAOProxy) Exists(id interface{}) bool {
-	return this.GetCount(this.primary+"=?", id) > 0
+func (this *DAOProxy) Exists(id interface{}) bool { //{{{
+	return this.GetOne(this.primary, this.primary+"=?", id) != nil
 } // }}}
 
-//ExistsBy {{{
-func (this *DAOProxy) ExistsBy(where string, params ...interface{}) bool {
-	return this.GetCount(where, params...) > 0
+func (this *DAOProxy) ExistsBy(params ...interface{}) bool { //{{{
+	return this.GetOne(this.primary, params...) != nil
 } // }}}
 
-//GetRecordBy {{{
-func (this *DAOProxy) GetRecordBy(where string, params ...interface{}) map[string]interface{} {
-	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+" where "+where, params...)
+func (this *DAOProxy) GetRecordBy(params ...interface{}) map[string]interface{} { //{{{
+	where, values := this.parseParams(params...)
+	if "" != where {
+		where = " where " + where
+	}
+
+	row := this.GetDBReader().GetRow("select "+this.GetFields()+" from "+this.table+where+" limit 1", values...)
 
 	if len(row) > 0 && nil != this.bind {
 		this.parseRecord(row)
@@ -430,26 +567,30 @@ func (this *DAOProxy) GetRecordBy(where string, params ...interface{}) map[strin
 	return row
 } // }}}
 
-//GetRecords {{{
-func (this *DAOProxy) GetRecords(where string, start, num int, order string, params ...interface{}) []map[string]interface{} {
-	idx := ""
-	if "" != this.index {
-		idx = " force key(" + this.index + ") "
+func (this *DAOProxy) GetRecords(params ...interface{}) []map[string]interface{} { //{{{
+	where, values := this.parseParams(params...)
+
+	if "" != where {
+		where = " where " + where
 	}
 
-	if "" == where {
-		where = "1"
+	fidx := ""
+	idx := this.getIndex()
+	if "" != idx {
+		fidx = " force key(" + idx + ") "
 	}
 
+	order := this.getOrder()
 	if "" != order {
 		where = where + " order by " + order
 	}
 
-	if num > 0 {
-		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
+	limit := this.getLimit()
+	if "" != limit {
+		where = where + " limit " + limit
 	}
 
-	list := this.GetDBReader().GetAll("select "+this.GetFields()+" from "+this.table+idx+" where "+where, params...)
+	list := this.GetDBReader().GetAll("select "+this.GetFields()+" from "+this.table+fidx+where, values...)
 
 	if len(list) > 0 && nil != this.bind {
 		this.parseRecords(list)
@@ -460,29 +601,33 @@ func (this *DAOProxy) GetRecords(where string, start, num int, order string, par
 
 //大数据下会有性能问题，请谨慎使用
 //由于底层每次查询都是从连接池中获取连接，所以开启只读事务，以保证FOUND_ROWS()的两条sql使用同一连接
-//GetList{{
-func (this *DAOProxy) GetList(where string, start, num int, order string, params ...interface{}) (int, []map[string]interface{}) {
-	idx := ""
-	if "" != this.index {
-		idx = " force key(" + this.index + ") "
+func (this *DAOProxy) GetList(params ...interface{}) (int, []map[string]interface{}) { //{{{
+	where, values := this.parseParams(params...)
+
+	if "" != where {
+		where = " where " + where
 	}
 
-	if "" == where {
-		where = "1"
+	fidx := ""
+	idx := this.getIndex()
+	if "" != idx {
+		fidx = " force key(" + idx + ") "
 	}
 
+	order := this.getOrder()
 	if "" != order {
 		where = where + " order by " + order
 	}
 
-	if num > 0 {
-		where = where + " limit " + lib.ToString(start) + "," + lib.ToString(num)
+	limit := this.getLimit()
+	if "" != limit {
+		where = where + " limit " + limit
 	}
 
 	reader := this.GetDBReader().Begin(true)
 	defer reader.Rollback()
 
-	list := reader.GetAll("select SQL_CALC_FOUND_ROWS "+this.GetFields()+" from "+this.table+idx+" where "+where, params...)
+	list := reader.GetAll("select SQL_CALC_FOUND_ROWS "+this.GetFields()+" from "+this.table+fidx+where, values...)
 	total, _ := strconv.Atoi(reader.GetOne("select FOUND_ROWS() as total").(string))
 
 	reader.Commit()

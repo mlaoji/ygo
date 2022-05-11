@@ -1,5 +1,5 @@
-//go:build !norpc
-// +build !norpc
+//go:build norpc
+// +build norpc
 
 package controllers
 
@@ -7,13 +7,13 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/mlaoji/ygo/x"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
+	//"golang.org/x/net/context"
+	//"google.golang.org/grpc"
+	//"google.golang.org/grpc/metadata"
+	//"google.golang.org/grpc/peer"
 	"io/ioutil"
 	"mime/multipart"
-	"net"
+	//"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,14 +43,14 @@ const (
 )
 
 type BaseController struct {
-	RW            http.ResponseWriter
-	R             *http.Request
-	RBody         []byte
-	IR            *iRequest
-	Ctx           context.Context
-	startTime     time.Time
-	Mode          int
-	rpcInHeaders  metadata.MD
+	RW    http.ResponseWriter
+	R     *http.Request
+	RBody []byte
+	IR    *iRequest
+	//Ctx           context.Context
+	startTime time.Time
+	Mode      int
+	//rpcInHeaders  metadata.MD
 	rpcOutHeaders map[string]string
 	rpcContent    string
 	Controller    string
@@ -130,6 +130,7 @@ func (this *BaseController) getRequestBody(r *http.Request) ([]byte, error) { //
 	return buf, nil
 } // }}}
 
+/* run in norpc
 func (this *BaseController) PrepareRpc(r url.Values, ctx context.Context, controller, action string) { // {{{
 	this.prepare(r, RPC_MODE, controller, action)
 
@@ -141,6 +142,7 @@ func (this *BaseController) PrepareRpc(r url.Values, ctx context.Context, contro
 
 	x.Interceptor(secret == x.Conf.Get("rpc_auth."+appid), x.ERR_RPCAUTH, appid)
 } // }}}
+*/
 
 func (this *BaseController) PrepareCli(r url.Values, controller, action string) { // {{{
 	this.prepare(r, CLI_MODE, controller, action)
@@ -166,6 +168,7 @@ func (this *BaseController) GetHeader(key string) string { // {{{
 		return this.R.Header.Get(key)
 	}
 
+	/* run in norpc
 	if RPC_MODE == this.Mode {
 		if this.rpcInHeaders == nil {
 			this.rpcInHeaders, _ = metadata.FromIncomingContext(this.Ctx)
@@ -177,6 +180,7 @@ func (this *BaseController) GetHeader(key string) string { // {{{
 			}
 		}
 	}
+	*/
 
 	return ""
 } // }}}
@@ -381,6 +385,7 @@ func (this *BaseController) GetIp() string { // {{{
 		return x.GetIp(this.R)
 	}
 
+	/* run in norpc
 	if RPC_MODE == this.Mode {
 		pr, ok := peer.FromContext(this.Ctx)
 		if !ok {
@@ -394,6 +399,7 @@ func (this *BaseController) GetIp() string { // {{{
 		addr := strings.Split(pr.Addr.String(), ":")
 		return addr[0]
 	}
+	*/
 
 	return ""
 } // }}}
@@ -656,10 +662,12 @@ func (this *BaseController) Cost() int64 {
 }
 
 func (this *BaseController) GetRpcContent() string { // {{{
+	/* run in norpc
 	if this.rpcOutHeaders != nil {
 		header := metadata.New(this.rpcOutHeaders)
 		grpc.SendHeader(this.Ctx, header)
 	}
+	*/
 
 	return this.rpcContent
 } // }}}

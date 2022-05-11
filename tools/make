@@ -1,0 +1,69 @@
+#!/bin/bash
+
+function showHelp
+{
+    printf  "Usage: $0 <options>\n" 
+    printf "Options:
+    -t, --tags string\t build tags
+    -o, --output string\t output path, default: bin/app.bin\n"
+}
+
+while getopts "ht:o:" arg #选项后面的冒号表示该选项需要参数
+do
+    case $arg in #参数值存在$OPTARG中
+        t)
+        tags=$OPTARG
+        ;; 
+        o)
+        out=$OPTARG
+        ;;
+        h)
+        showHelp
+        exit 1
+        ;; 
+        ?)  #当有不认识的选项的时候arg为?
+        echo "unkonw argument"
+        showHelp
+        exit 1
+        ;;  
+    esac
+done
+
+
+cd `dirname $0`
+
+ROOT_DIR=`pwd`
+
+mygopath=$(dirname $(dirname $ROOT_DIR))
+sysgopath=$GOPATH
+
+if [ "$sysgopath" != "" ]; then
+export GOPATH=$mygopath:$sysgopath
+else
+export GOPATH=$mygopath
+fi
+
+echo "GOPATH:$GOPATH"
+
+export GO111MODULE=off
+echo "GO111MODULE=off"
+
+APPNAME=bin/app
+
+if [ "$out" != "" ]; then
+    APPNAME="$out"
+fi
+
+gotag=""
+if [ "$tags" != "" ]; then
+    gotag="-tags $tags"
+fi
+
+echo "go build $gotag -o $APPNAME.bin"
+go build $gotag -o $APPNAME.bin
+
+if [ $? != 0 ]; then
+    exit 1
+fi
+
+export GOPATH=$sysgopath

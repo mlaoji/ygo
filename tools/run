@@ -1,0 +1,73 @@
+#!/bin/bash
+
+norpc=Y
+nows=Y
+
+mode=$1
+idc=$2
+
+ext_args=""
+i=0
+for a in "$@"
+do
+    if [[ $i > 1 ]];then
+        ext_args="$ext_args $a"
+    fi
+    i=`expr $i + 1`
+done
+
+if [ "$mode" == "" ] ;then
+    mode=http
+else 
+    if [ -n "`echo $mode | grep rpc`" ] ;then
+        norpc=N
+    fi
+
+    if [ -n "`echo $mode | grep ws`" ] ;then
+        nows=N
+    fi
+fi
+
+app_conf="app.conf"
+
+if [ "$idc" != "" ]; then
+    app_conf="$app_conf.$idc"
+fi
+
+ROOT_DIR=`pwd`
+
+mygopath=$(dirname $(dirname $ROOT_DIR))
+sysgopath=$GOPATH
+
+if [ "$sysgopath" != "" ]; then
+export GOPATH=$mygopath:$sysgopath
+else
+export GOPATH=$mygopath
+fi
+
+echo "GOPATH:$GOPATH"
+
+#export GO111MODULE=off
+echo "GO111MODULE=$GO111MODULE"
+
+tags=""
+if [ "$norpc" = "Y" ];then
+    tags="norpc"
+fi
+
+if [ "$nows" = "Y" ];then
+    if [ "$tags" != "" ]; then
+        tags="$tags,nows"
+    else
+        tags="nows"
+    fi
+fi
+
+if [ "$tags" != "" ];then
+    tags="-tags $tags"
+fi
+
+echo "go run $tags main.go -o $PWD/logs -f $PWD/conf/$app_conf -m $mode $ext_args"
+go run $tags main.go -o $PWD/logs -f $PWD/conf/$app_conf -m $mode $ext_args
+
+export GOPATH=$sysgopath
