@@ -1,4 +1,4 @@
-module github.com/mlaoji/ygo/v1
+module github.com/mlaoji/ygo
 
 go 1.14
 
