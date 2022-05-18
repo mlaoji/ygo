@@ -5,9 +5,9 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/mlaoji/ygo/x"
-	//"golang.org/x/net/context"
 	//"google.golang.org/grpc"
 	//"google.golang.org/grpc/metadata"
 	//"google.golang.org/grpc/peer"
@@ -43,16 +43,16 @@ const (
 )
 
 type BaseController struct {
-	RW    http.ResponseWriter
-	R     *http.Request
-	RBody []byte
-	IR    *iRequest
-	//Ctx           context.Context
+	RW        http.ResponseWriter
+	R         *http.Request
+	RBody     []byte
+	IR        *iRequest
+	Ctx       context.Context
 	startTime time.Time
 	Mode      int
 	//rpcInHeaders  metadata.MD
 	rpcOutHeaders map[string]string
-	rpcContent    string
+	rpcContent    []byte
 	Controller    string
 	Action        string
 	Uri           string
@@ -85,36 +85,35 @@ func (this *BaseController) Prepare(rw http.ResponseWriter, r *http.Request, con
 	this.prepare(r.Form, HTTP_MODE, controller, action)
 
 	//api 接口频度控制
-	freq_conf := x.Conf.GetMap("api_freq_conf")
-	if freq_conf["check_freq"] == "1" { //默认关闭
-		api_freq_conf := x.Conf.GetNode("api_freq_conf." + this.Uri)
-		if mtd_conf, ok := api_freq_conf.(x.YamlList); ok {
-			for _, freq_rule := range mtd_conf {
-				whitelist := freq_rule.ToYamlTree().GetSlice("whitelist")
-				blacklist := freq_rule.ToYamlTree().GetSlice("blacklist")
-				freq_rule_conf := freq_rule.ToYamlTree().GetSlice("rule")
-				if len(freq_rule_conf) > 2 {
-					freq := x.NewRestrict(this.Uri+"_"+freq_rule_conf[0]+"_"+freq_rule_conf[1]+"_"+freq_rule_conf[2], x.ToInt(freq_rule_conf[0]), x.ToInt(freq_rule_conf[1])) //规则名,频率,周期(秒)
-					if len(whitelist) > 0 {
-						freq.AddWhitelist(whitelist)
-					}
-					if len(blacklist) > 0 {
-						freq.AddBlacklist(blacklist)
-					}
-					check_key := freq_rule_conf[2]
-					check_val := ""
-					if "ip" == check_key {
-						check_val = this.GetIp()
-					} else {
-						check_val = this.GetString(check_key)
-					}
+	check_freq := x.Conf.GetBool("check_freq")
 
-					if "" != freq_conf["use_redis_conf"] {
-						freq.UseRedis(freq_conf["use_redis_conf"])
-					}
+	if check_freq { //默认关闭
+		rules := x.Conf.GetSliceMap("freq_conf." + this.Uri)
 
-					x.Interceptor(!freq.Add(check_val), x.ERR_FREQ, check_key)
+		for _, freq_rule := range rules {
+			whitelist := freq_rule["whitelist"]
+			blacklist := freq_rule["blacklist"]
+			check_key := freq_rule["key"]
+			freq := x.AsInt(freq_rule["freq"])
+			interval := x.AsInt(freq_rule["interval"])
+
+			check_val := ""
+			if "ip" == check_key {
+				check_val = this.GetIp()
+			} else {
+				check_val = this.GetString(check_key)
+			}
+
+			if check_val != "" && freq > 0 && interval > 0 {
+				restrict := x.NewRestrict(this.Uri+"_"+check_key+"_"+freq_rule["freq"]+"_"+freq_rule["interval"], freq, interval) //规则名,频率,周期(秒)
+				if whitelist != "" {
+					restrict.AddWhitelist(strings.Split(whitelist, ","))
 				}
+				if blacklist != "" {
+					restrict.AddBlacklist(strings.Split(blacklist, ","))
+				}
+
+				x.Interceptor(!restrict.Add(check_val), x.ERR_FREQ, check_key)
 			}
 		}
 	}
@@ -543,12 +542,23 @@ func (this *BaseController) RenderJson(res interface{}) { // {{{
 		this.RW.Header().Set("Content-Type", "application/json;charset=UTF-8")
 	}
 
-	this.render(x.JsonEncode(res))
+	this.render(x.JsonEncodeBytes(res))
 } // }}}
 
-//输出字符串
-func (this *BaseController) RenderString(data string) { // {{{
-	this.render(data)
+//输出文本
+func (this *BaseController) RenderText(res interface{}) { // {{{
+	var ret []byte
+
+	switch v := res.(type) {
+	case []byte:
+		ret = v
+	case string:
+		ret = []byte(v)
+	default:
+		ret = []byte(fmt.Sprint(v))
+	}
+
+	this.render(ret)
 } // }}}
 
 //输出HTTP状态码
@@ -583,17 +593,17 @@ func (this *BaseController) Redirect(url string, codes ...int) { // {{{
 	http.Redirect(this.RW, this.R, url, code)
 } // }}}
 
-func (this *BaseController) render(data string) { // {{{
+func (this *BaseController) render(data []byte) { // {{{
 	if LOG_ACCESS {
-		x.Logger.Access(this.GenLog(), data)
+		x.Logger.Access(this.GenLog(), string(data))
 	}
 
 	if this.Mode == RPC_MODE {
 		this.rpcContent = data
 	} else if this.Mode == CLI_MODE {
-		fmt.Println(data)
+		fmt.Printf("%s", data)
 	} else {
-		this.RW.Write([]byte(data))
+		this.RW.Write(data)
 	}
 } // }}}
 
@@ -661,7 +671,7 @@ func (this *BaseController) Cost() int64 {
 	return time.Now().Sub(this.startTime).Nanoseconds() / 1000 / 1000
 }
 
-func (this *BaseController) GetRpcContent() string { // {{{
+func (this *BaseController) GetRpcContent() []byte { // {{{
 	/* run in norpc
 	if this.rpcOutHeaders != nil {
 		header := metadata.New(this.rpcOutHeaders)

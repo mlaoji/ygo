@@ -4,10 +4,10 @@
 package x
 
 import (
+	"context"
 	"fmt"
 	"github.com/mlaoji/ygo/x/endless"
 	"github.com/mlaoji/ygo/x/pb"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"log"
 	"net/url"
@@ -89,12 +89,12 @@ func (this *rpcHandler) Call(ctx context.Context, in *pb.Request) (*pb.Reply, er
 	method := in.Method
 	params := in.Params
 
-	res := this.ServeTCP(method, params, ctx)
+	res := this.Serve(method, params, ctx)
 
 	return &pb.Reply{Response: res}, nil
 } // }}}
 
-func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string, ctx context.Context) (ret string) { // {{{
+func (this *rpcHandler) Serve(requesturi string, params map[string]string, ctx context.Context) (ret []byte) { // {{{
 	defer func() {
 		if err := recover(); err != nil {
 			var errmsg string
@@ -135,7 +135,7 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string, ct
 
 	if !canhandler {
 		fmt.Println("method not exits ")
-		return ""
+		return nil
 	}
 
 	vc := reflect.New(contollerType)
@@ -151,7 +151,7 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string, ct
 			in = make([]reflect.Value, 0)
 			method = vc.MethodByName("GetRpcContent")
 			res := method.Call(in)
-			ret = fmt.Sprintf("%s", res[0])
+			ret = res[0].Bytes()
 		}
 	}()
 
@@ -180,7 +180,7 @@ func (this *rpcHandler) ServeTCP(requesturi string, params map[string]string, ct
 	in = make([]reflect.Value, 0)
 	method = vc.MethodByName("GetRpcContent")
 	res := method.Call(in)
-	ret = fmt.Sprintf("%s", res[0])
+	ret = res[0].Bytes()
 
 	return
 } // }}}

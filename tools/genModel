@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# 生成 model/dao 文件
+#
+
 cd `dirname $0`
 
 cd ..

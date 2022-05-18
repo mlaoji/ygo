@@ -7,6 +7,10 @@ import (
 	"sync"
 )
 
+func NewDBProxy() *DBProxy {
+	return &DBProxy{c: map[string]db.DBClient{}}
+}
+
 type DBProxy struct {
 	mutex sync.RWMutex
 	c     map[string]db.DBClient

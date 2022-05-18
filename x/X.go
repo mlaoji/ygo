@@ -25,10 +25,10 @@ var Conf *Config
 var LocalCache *cache.Cache
 
 //全局共用db代理
-var DB = &DBProxy{c: map[string]db.DBClient{}}
+var DB = NewDBProxy()
 
 //全局共用redis代理
-var Redis = &RedisProxy{c: map[string]*redis.RedisClient{}}
+var Redis = NewRedisProxy()
 
 //通过配置文件名字使用redis
 func NewRedis(conf_name string) (*redis.RedisClient, error) { // {{{

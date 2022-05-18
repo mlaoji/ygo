@@ -1,0 +1,164 @@
+#!/bin/bash
+cd `dirname $0`
+
+cd ..
+
+dir=`pwd`
+app=`basename $dir`
+
+function showHelp
+{
+    printf "Usage: $0 <options>\n" 
+    printf "Options:
+    -f, --force \t overwrite
+    -s, --service string\t service name
+    -m, --method string\t method funcs(split by comma if multiple), default: test\n"
+}
+
+while getopts "fhs:m:" arg #选项后面的冒号表示该选项需要参数
+do
+    case $arg in #参数值存在$OPTARG中
+        f)  
+        is_force=Y
+        ;;  
+        s)
+        service=$OPTARG
+        ;;
+        m)
+        methods=$OPTARG
+        ;;  
+        h)
+        showHelp
+        exit 1
+        ;; 
+        ?)  #当有不认识的选项的时候arg为?
+        echo "unkonw argument"
+        showHelp
+        exit 1
+        ;;  
+    esac
+done
+
+if [  "" = "$service" ]; then
+    showHelp
+    exit 1
+fi
+
+if [ "" = "$methods" ]; then
+    methods="test"
+fi
+
+function tolower {
+#{{{
+    echo $1 | tr '[A-Z]' '[a-z]'
+}
+#}}}
+
+
+function ucfirst {
+#{{{
+    name=$1
+    first_char=${name:0:1}
+    other_chars=${name:1}
+    echo `echo $first_char| tr '[a-z]' '[A-Z]'`$other_chars
+}
+#}}}
+
+service=$(tolower $service)
+model_name=$(ucfirst $service)
+
+ROOT_DIR=`pwd`
+
+model_dir=$ROOT_DIR/src/models
+model_file=$model_dir/$model_name.go
+
+
+function genModel {
+#{{{
+    OLD_IFS="$IFS"
+    IFS=","
+
+    arr=($methods)
+    IFS="$OLD_IFS"
+
+echo "package models" >> $model_file
+echo "" >> $model_file
+echo "//此文件是由 tools/genRpcModel 自动生成, 可按需要修改" >> $model_file
+echo "" >> $model_file
+echo "import (" >> $model_file
+echo "	\"fmt\"" >> $model_file
+echo "	\"github.com/mlaoji/yclient\"" >> $model_file
+echo "	\"github.com/mlaoji/ygo/x\"" >> $model_file
+echo ")" >> $model_file
+echo "" >> $model_file
+
+echo "func ${model_name}() *${model_name}Model {" >> $model_file
+echo "	return &${model_name}Model{}" >> $model_file
+echo "}" >> $model_file
+echo "" >> $model_file
+
+echo "type ${model_name}Model struct {}" >> $model_file
+echo "" >> $model_file
+
+echo "func (this *${model_name}Model) getClient() (*yclient.YClient, error) { // {{{" >> $model_file
+echo "	conf := x.Conf.GetMap(\"rpc_client_${service}\") ">> $model_file
+echo "	return yclient.NewYClient(conf[\"host\"], conf[\"appid\"], conf[\"secret\"])" >> $model_file
+echo "} //}}}" >> $model_file
+
+    for m in ${arr[@]}
+    do
+        func_name=$(ucfirst `echo $m|awk -F'/' '{print $2}'`)
+
+echo "" >> $model_file
+echo "func (this *${model_name}Model) ${func_name}() (x.MAP, error) { // {{{" >> $model_file
+echo "   c, err := this.getClient()" >> $model_file
+echo "   if nil != err {" >> $model_file
+echo "      return nil, err" >> $model_file
+echo "   }" >> $model_file
+echo "" >> $model_file
+echo "   res, err := c.Request(\"${m}\", x.MAP{})" >> $model_file
+echo "   if err != nil {" >> $model_file
+echo "      return nil, err" >> $model_file
+echo "   }" >> $model_file
+echo "" >> $model_file
+echo "   if res.GetCode() > 0 {" >> $model_file
+echo "      return nil, fmt.Errorf(\"rpc client return err: %s\", res.GetMsg())" >> $model_file
+echo "   }" >> $model_file
+echo "" >> $model_file
+echo "   return res.GetData(), nil" >> $model_file
+echo "} // }}}" >> $model_file
+
+    done
+}
+#}}}
+
+success=N
+if test -e $model_file ;then
+    echo "file [$model_file] exists!"
+
+    if [ "$is_force" = "Y" ]; then
+        mv $model_file $model_file.bak
+        echo "backup file saved at [$model_file.bak]"
+
+        genModel
+
+        success=Y
+    fi
+else
+    mkdir -p $model_dir
+    genModel
+
+    if test -e $model_file; then
+        success=Y
+    fi
+fi
+
+if [ "$success" = "Y" ]; then
+    echo "generated model file $model_file"
+    echo "success!"
+
+    echo "请根据需要补全参数及修改必要的逻辑!"
+fi
+
+
+

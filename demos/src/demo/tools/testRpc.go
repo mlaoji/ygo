@@ -16,11 +16,11 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Printf("host: %#v\n", *host)
+	fmt.Println("host: ", *host)
 
-	c, err := yclient.NewYClient(*host, *app, *secret, 3, 1)
+	c, err := yclient.NewYClient(*host, *app, *secret)
 	if err != nil {
-		fmt.Printf("%#v\n", err)
+		fmt.Println("init err: ", err)
 		return
 	}
 
@@ -39,17 +39,16 @@ func main() {
 		}
 	}
 
-	data, err := c.Request(*method, p)
+	res, err := c.Request(*method, p)
 
 	if err != nil {
-		fmt.Printf("%#v\n", err)
-
-		//获取错误码
-		errno := c.Errno(err)
-		fmt.Printf("%#v\n", errno)
-
-	} else {
-		fmt.Println("ok")
-		fmt.Printf("%#v\n", data)
+		fmt.Println("res err: ", err)
+		return
 	}
+
+	fmt.Println("code: ", res.GetCode())
+	fmt.Println("msg: ", res.GetMsg())
+	fmt.Println("data: ", res.GetData())
+	fmt.Println("header: ", res.GetHeaders())
+	fmt.Println("trailer: ", res.GetTrailers())
 }

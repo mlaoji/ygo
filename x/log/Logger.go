@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,9 @@ func (this *Logger) Init(logpath, logname string, loglevel int) { // {{{
 	this.curDate = make(map[string]string)
 	this.loggerMap = make(map[string]*log.Logger)
 	this.logLevel = loglevel
+
+	os.Setenv("YGO_LOG_PATH", this.logPath)
+	os.Setenv("YGO_LOG_LEVEL", strconv.Itoa(this.logLevel))
 
 	os.MkdirAll(this.logPath, 0777)
 } // }}}

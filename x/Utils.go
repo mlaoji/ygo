@@ -133,9 +133,7 @@ func GetSlice(m interface{}, keys ...string) []interface{} { // {{{
 func MapMerge(m MAP, ms ...MAP) MAP { // {{{
 	for _, v := range ms {
 		for i, j := range v {
-			if _, ok := m[i]; !ok {
-				m[i] = j
-			}
+			m[i] = j
 		}
 	}
 
@@ -235,13 +233,17 @@ func GetLocalIp() string { // {{{
 	return ip
 } // }}}
 
-func JsonEncode(data interface{}) string { // {{{
+func JsonEncodeBytes(data interface{}) []byte { // {{{
 	content, err := json.MarshalIndent(data, "", "")
 	if err != nil {
-		return ""
+		return nil
 	}
 
-	return strings.Replace(string(content), "\n", "", -1)
+	return bytes.Replace(content, []byte("\n"), []byte(""), -1)
+} // }}}
+
+func JsonEncode(data interface{}) string { // {{{
+	return string(JsonEncodeBytes(data))
 } // }}}
 
 func JsonDecode(data interface{}) interface{} { // {{{

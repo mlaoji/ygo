@@ -6,6 +6,10 @@ import (
 	"sync"
 )
 
+func NewRedisProxy() *RedisProxy {
+	return &RedisProxy{c: map[string]*redis.RedisClient{}}
+}
+
 type RedisProxy struct {
 	mutex sync.RWMutex
 	c     map[string]*redis.RedisClient

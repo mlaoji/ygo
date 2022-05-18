@@ -1,4 +1,7 @@
 #!/bin/bash
+#
+# 打包脚本
+#
 
 function showHelp
 {
@@ -45,8 +48,8 @@ fi
 
 echo "GOPATH:$GOPATH"
 
-export GO111MODULE=off
-echo "GO111MODULE=off"
+#export GO111MODULE=off
+echo "GO111MODULE=$GO111MODULE"
 
 APPNAME=bin/app
 

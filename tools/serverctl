@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# 控制台脚本
+#
+
 file=`basename $0` 
 
 cd `dirname $0` 

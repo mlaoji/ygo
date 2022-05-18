@@ -45,7 +45,7 @@ func (this *Ygo) Init() { // {{{
     _/        _/_/_/    _/_/
 
 ` +
-		"Author: mlaoji\n" +
+		"Author: YangJiguang\n" +
 		"Version: " + SYSTEM_VERSION + "\n" +
 		"Home: https://github.com/mlaoji/ygo\n"
 

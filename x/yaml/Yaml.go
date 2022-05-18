@@ -101,19 +101,15 @@ func (this *YamlTree) GetNode(key string) YamlNode { // {{{
 } // }}}
 
 func (this *YamlTree) Get(key string, defs ...string) string { // {{{
-	def := ""
-	if len(defs) > 0 {
-		def = defs[0]
-	}
-
-	if len(key) == 0 {
-		return def
-	}
-
 	val := this.get(this.node, key, false)
 
 	if s, ok := val.(YamlScalar); ok {
 		return string(s)
+	}
+
+	def := ""
+	if len(defs) > 0 {
+		def = defs[0]
 	}
 
 	return def
@@ -123,10 +119,6 @@ func (this *YamlTree) GetInt(key string, defs ...int) int { // {{{
 	def := 0
 	if len(defs) > 0 {
 		def = defs[0]
-	}
-
-	if len(key) == 0 {
-		return def
 	}
 
 	val := this.get(this.node, key, false)
@@ -148,10 +140,6 @@ func (this *YamlTree) GetBool(key string, defs ...bool) bool { // {{{
 		def = defs[0]
 	}
 
-	if len(key) == 0 {
-		return def
-	}
-
 	val := this.get(this.node, key, false)
 	if s, ok := val.(YamlScalar); ok {
 		result, err := strconv.ParseBool(string(s))
@@ -166,15 +154,6 @@ func (this *YamlTree) GetBool(key string, defs ...bool) bool { // {{{
 } // }}}
 
 func (this *YamlTree) GetSlice(key string, defs ...[]string) []string { // {{{
-	def := []string{}
-	if len(defs) > 0 {
-		def = defs[0]
-	}
-
-	if len(key) == 0 {
-		return def
-	}
-
 	val := this.get(this.node, key, false)
 	if s, ok := val.(YamlList); ok {
 		result := []string{}
@@ -189,19 +168,15 @@ func (this *YamlTree) GetSlice(key string, defs ...[]string) []string { // {{{
 		return result
 	}
 
-	return def
-} // }}}
-
-func (this *YamlTree) GetSliceInt(key string, defs ...[]int) []int { // {{{
-	def := []int{}
+	def := []string{}
 	if len(defs) > 0 {
 		def = defs[0]
 	}
 
-	if len(key) == 0 {
-		return def
-	}
+	return def
+} // }}}
 
+func (this *YamlTree) GetSliceInt(key string, defs ...[]int) []int { // {{{
 	val := this.get(this.node, key, false)
 	if s, ok := val.(YamlList); ok {
 		result := []int{}
@@ -217,7 +192,30 @@ func (this *YamlTree) GetSliceInt(key string, defs ...[]int) []int { // {{{
 		return result
 	}
 
+	def := []int{}
+	if len(defs) > 0 {
+		def = defs[0]
+	}
+
 	return def
+} // }}}
+
+func (this *YamlTree) GetSliceMap(key string) []map[string]string { // {{{
+	if len(key) == 0 {
+		return nil
+	}
+
+	val := this.get(this.node, key, false)
+	if s, ok := val.(YamlList); ok {
+		result := []map[string]string{}
+		for _, v := range s {
+			result = append(result, (&YamlTree{node: v}).GetMap(""))
+		}
+
+		return result
+	}
+
+	return nil
 } // }}}
 
 func (this *YamlTree) GetSliceTree(key string) []*YamlTree { // {{{
@@ -257,15 +255,6 @@ func (this *YamlTree) GetSliceNode(key string) []YamlNode { // {{{
 } // }}}
 
 func (this *YamlTree) GetMap(key string, defs ...map[string]string) map[string]string { // {{{
-	def := map[string]string{}
-	if len(defs) > 0 {
-		def = defs[0]
-	}
-
-	if len(key) == 0 {
-		return def
-	}
-
 	val := this.get(this.node, key, false)
 	if s, ok := val.(YamlMap); ok {
 		result := map[string]string{}
@@ -279,22 +268,17 @@ func (this *YamlTree) GetMap(key string, defs ...map[string]string) map[string]s
 		}
 
 		return result
+	}
 
+	def := map[string]string{}
+	if len(defs) > 0 {
+		def = defs[0]
 	}
 
 	return def
 } // }}}
 
 func (this *YamlTree) GetMapInt(key string, defs ...map[string]int) map[string]int { // {{{
-	def := map[string]int{}
-	if len(defs) > 0 {
-		def = defs[0]
-	}
-
-	if len(key) == 0 {
-		return def
-	}
-
 	val := this.get(this.node, key, false)
 	if s, ok := val.(YamlMap); ok {
 		result := map[string]int{}
@@ -308,7 +292,11 @@ func (this *YamlTree) GetMapInt(key string, defs ...map[string]int) map[string]i
 		}
 
 		return result
+	}
 
+	def := map[string]int{}
+	if len(defs) > 0 {
+		def = defs[0]
 	}
 
 	return def

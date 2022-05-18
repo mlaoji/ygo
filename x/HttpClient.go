@@ -44,46 +44,46 @@ type HttpClient struct {
 	client *http.Client
 }
 
-type httpResponse struct {
+type HttpResponse struct {
 	response string
 	code     int
 	header   http.Header
 }
 
-func (r *httpResponse) GetResponse() string {
+func (r *HttpResponse) GetResponse() string {
 	return r.response
 }
 
-func (r *httpResponse) GetCode() int {
+func (r *HttpResponse) GetCode() int {
 	return r.code
 }
 
-func (r *httpResponse) GetHeader() http.Header {
+func (r *HttpResponse) GetHeader() http.Header {
 	return r.header
 }
 
-func (this *HttpClient) Get(requrl string, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Get(requrl string, headers ...http.Header) (*HttpResponse, error) { // {{{
 	return this.Request("GET", requrl, nil, headers...)
 } //}}}
 
-func (this *HttpClient) Post(requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Post(requrl string, post_data interface{}, headers ...http.Header) (*HttpResponse, error) { // {{{
 	return this.Request("POST", requrl, post_data, headers...)
 } //}}}
 
-func (this *HttpClient) Delete(requrl string, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Delete(requrl string, headers ...http.Header) (*HttpResponse, error) { // {{{
 	return this.Request("DELETE", requrl, nil, headers...)
 } //}}}
 
-func (this *HttpClient) Put(requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Put(requrl string, post_data interface{}, headers ...http.Header) (*HttpResponse, error) { // {{{
 	return this.Request("PUT", requrl, post_data, headers...)
 } //}}}
 
-func (this *HttpClient) Patch(requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Patch(requrl string, post_data interface{}, headers ...http.Header) (*HttpResponse, error) { // {{{
 	return this.Request("PATCH", requrl, post_data, headers...)
 } //}}}
 
 //post_data 支持map[string]interface{} 和 io.Reader 两种参数类型
-func (this *HttpClient) Request(method, requrl string, post_data interface{}, headers ...http.Header) (*httpResponse, error) { // {{{
+func (this *HttpClient) Request(method, requrl string, post_data interface{}, headers ...http.Header) (*HttpResponse, error) { // {{{
 	var data io.Reader
 	if params, ok := post_data.(map[string]interface{}); ok {
 		urlparams := url.Values{}
@@ -128,7 +128,7 @@ func (this *HttpClient) Request(method, requrl string, post_data interface{}, he
 		return nil, err
 	}
 
-	return &httpResponse{
+	return &HttpResponse{
 		response: string(body),
 		code:     resp.StatusCode,
 		header:   resp.Header,

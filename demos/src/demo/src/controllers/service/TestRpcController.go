@@ -23,8 +23,11 @@ func (this *TestRpcController) HelloAction() { // {{{
 	x.Interceptor(len(msg) > 0, x.ERR_PARAMS, "msg")
 
 	ret := map[string]interface{}{
-		"msg": msg,
+		"msg":         msg,
+		"header-guid": this.GetHeader("guid"),
 	}
+
+	this.SetHeader("test-header", "1234")
 
 	this.Render(ret)
 
