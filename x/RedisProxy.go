@@ -24,7 +24,13 @@ func (this *RedisProxy) Get(config map[string]string) (*redis.RedisClient, error
 		defer this.mutex.Unlock()
 
 		if this.c[host] == nil {
-			rc, err := redis.NewRedisClient(host, config["password"], AsInt(config["timeout"]), AsInt(config["poolsize"]))
+			rc, err := redis.NewRedisClient(host,
+				config["password"],
+				redis.WithTimeout(AsInt(config["timeout"])),
+				redis.WithReadTimeout(AsInt(config["read_timeout"])),
+				redis.WithWriteTimeout(AsInt(config["write_timeout"])),
+				redis.WithPoolsize(AsInt(config["poolsize"])),
+			)
 			if nil != err {
 				fmt.Println("add redis error:", "[", host, "] :", err)
 				return nil, err

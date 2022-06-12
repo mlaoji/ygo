@@ -6,12 +6,25 @@ import (
 	"time"
 )
 
-func NewRedisClient(host, password string, timeout, poolsize int) (*RedisClient, error) { // {{{
+var (
+	DefaultPoolsize     = 10 //连接池最大连接数
+	DefaultTimeout      = 3  //连接超时, 单位:秒
+	DefaultReadTimeout  = 0  //读超时, 单位:秒
+	DefaultWriteTimeout = 0  //写超时, 单位:秒
+)
+
+func NewRedisClient(host, password string, options ...FuncRcOption) (*RedisClient, error) { // {{{
 	rc := &RedisClient{
-		Host:     host,
-		Password: password,
-		Timeout:  timeout,
-		Poolsize: poolsize,
+		Host:         host,
+		Password:     password,
+		Poolsize:     DefaultPoolsize,
+		Timeout:      DefaultTimeout,
+		ReadTimeout:  DefaultReadTimeout,
+		WriteTimeout: DefaultWriteTimeout,
+	}
+
+	for _, opt := range options {
+		opt(rc)
 	}
 
 	err := rc.Init()
@@ -19,27 +32,59 @@ func NewRedisClient(host, password string, timeout, poolsize int) (*RedisClient,
 	return rc, err
 } // }}}
 
+type FuncRcOption func(rc *RedisClient)
+
+//NewRedisClient 设置参数 poolsize
+func WithPoolsize(poolsize int) FuncRcOption { // {{{
+	return func(rc *RedisClient) {
+		if poolsize > 0 {
+			rc.Poolsize = poolsize
+		}
+	}
+} // }}}
+
+//NewRedisClient 设置参数 Timeout
+func WithTimeout(timeout int) FuncRcOption { // {{{
+	return func(rc *RedisClient) {
+		if timeout > 0 {
+			rc.Timeout = timeout
+		}
+	}
+} // }}}
+
+//NewRedisClient 设置参数 ReadTimeout
+func WithReadTimeout(timeout int) FuncRcOption { // {{{
+	return func(rc *RedisClient) {
+		if timeout > 0 {
+			rc.ReadTimeout = timeout
+		}
+	}
+} // }}}
+
+//NewRedisClient 设置参数 WriteTimeout
+func WithWriteTimeout(timeout int) FuncRcOption { // {{{
+	return func(rc *RedisClient) {
+		if timeout > 0 {
+			rc.WriteTimeout = timeout
+		}
+	}
+} // }}}
+
 type RedisClient struct {
-	Host     string
-	Password string
-	Timeout  int
-	Poolsize int
-	network  string
-	_pool    *pool.Pool
+	Host         string
+	Password     string
+	Timeout      int //DialTimeout
+	ReadTimeout  int
+	WriteTimeout int
+	Poolsize     int
+	network      string
+	_pool        *pool.Pool
 }
 
 func (this *RedisClient) Init() error { // {{{
 	var err error
 	if "" == this.network {
 		this.network = "tcp"
-	}
-
-	if 0 == this.Poolsize {
-		this.Poolsize = 10
-	}
-
-	if 0 == this.Timeout {
-		this.Timeout = 3
 	}
 
 	_dialfuc := func(network, addr string) (*redis.Client, error) {
@@ -53,6 +98,14 @@ func (this *RedisClient) Init() error { // {{{
 				client.Close()
 				return nil, err
 			}
+		}
+
+		if this.ReadTimeout > 0 {
+			client.ReadTimeout = time.Second * time.Duration(this.ReadTimeout)
+		}
+
+		if this.WriteTimeout > 0 {
+			client.WriteTimeout = time.Second * time.Duration(this.WriteTimeout)
 		}
 
 		return client, nil

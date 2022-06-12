@@ -3,7 +3,6 @@ package x
 import (
 	"fmt"
 	"github.com/mlaoji/ygo/x/redis"
-	"math"
 	"time"
 )
 
@@ -93,7 +92,7 @@ func (this *Restrict) Check(uniqid string, update bool) bool { //{{{
 } // }}}
 
 func (this *Restrict) getKey(uniqid string) string { //{{{
-	return fmt.Sprint(this.Rule+uniqid, math.Ceil(float64(Now())/float64(this.Interval)))
+	return fmt.Sprint(this.Rule+uniqid, Now()/this.Interval)
 } //}}}
 
 func (this *Restrict) getRecord(uniqid string) (int, error) { //{{{

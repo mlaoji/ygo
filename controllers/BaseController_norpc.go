@@ -60,7 +60,6 @@ type BaseController struct {
 	logParams     map[string]interface{} //需要额外记录在日志中的参数
 	logOmitParams []string               //不希望记录在日志中的参数
 	Tpl           *x.Template
-	StripTags     bool //去除参数值中的html标签
 }
 
 //默认的初始化方法，可通过在项目中重写此方法实现公共入口方法
@@ -184,13 +183,17 @@ func (this *BaseController) GetHeader(key string) string { // {{{
 	return ""
 } // }}}
 
-func (this *BaseController) getFormValue(key string) string { // {{{
+func (this *BaseController) getFormValue(key string, trimSpace bool) string { // {{{
 	if this.IR.Form == nil {
 		return ""
 	}
 
 	if vs := this.IR.Form[key]; len(vs) > 0 {
-		return strings.TrimSpace(vs[0])
+		if trimSpace {
+			return strings.TrimSpace(vs[0])
+		} else {
+			return vs[0]
+		}
 	}
 
 	return ""
@@ -203,35 +206,45 @@ func (this *BaseController) GetParam(key string, defaultValues ...string) string
 
 //获取string类型参数
 func (this *BaseController) GetString(key string, defaultValues ...string) string { // {{{
-	defaultValue := ""
-
-	if len(defaultValues) > 0 {
-		defaultValue = defaultValues[0]
-	}
-
-	ret := this.getFormValue(key)
+	ret := this.getFormValue(key, true)
 	if ret == "" {
-		ret = defaultValue
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
 	}
+
 	return ret
+} // }}}
+
+//获取bytes类型参数
+func (this *BaseController) GetBytes(key string, defaultValues ...[]byte) []byte { // {{{
+	ret := this.getFormValue(key, false)
+	if ret == "" {
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
+	}
+
+	return []byte(ret)
 } // }}}
 
 //获取指定字符连接的字符串并转换成[]string
 func (this *BaseController) GetSlice(key string, separators ...string) []string { //{{{
-	separator := ","
-	if len(separators) > 0 {
-		separator = separators[0]
-	}
-
 	value := this.GetString(key)
 	if "" == value {
 		return nil
+	}
+
+	separator := ","
+	if len(separators) > 0 {
+		separator = separators[0]
 	}
 
 	slice := []string{}
 	for _, part := range strings.Split(value, separator) {
 		slice = append(slice, strings.Trim(part, " \r\t\v"))
 	}
+
 	return slice
 } // }}}
 
@@ -318,53 +331,57 @@ func (this *BaseController) GetMap(key string) map[string]string { // {{{
 	return ret
 } // }}}
 
-//获取Int型参数
+//获取Int类型参数
 func (this *BaseController) GetInt(key string, defaultValues ...int) int { // {{{
-	defaultValue := 0
-
-	if len(defaultValues) > 0 {
-		defaultValue = defaultValues[0]
-	}
-
-	ret, err := strconv.Atoi(this.getFormValue(key))
+	ret, err := strconv.Atoi(this.getFormValue(key, true))
 	if err != nil {
-		ret = defaultValue
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
 	}
+
 	return ret
 } // }}}
 
+//获取Int32类型参数
+func (this *BaseController) GetInt32(key string, defaultValues ...int32) int32 { // {{{
+	ret, err := strconv.Atoi(this.getFormValue(key, true))
+	if err != nil {
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
+	}
+
+	return int32(ret)
+} // }}}
+
+//获取Int64类型参数
 func (this *BaseController) GetInt64(key string, defaultValues ...int64) int64 { // {{{
-	defaultValue := int64(0)
-
-	if len(defaultValues) > 0 {
-		defaultValue = defaultValues[0]
-	}
-
-	ret, err := strconv.ParseInt(this.getFormValue(key), 10, 64)
+	ret, err := strconv.ParseInt(this.getFormValue(key, true), 10, 64)
 	if err != nil {
-		ret = defaultValue
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
 	}
+
 	return ret
 } // }}}
 
-//获取bool型参数
+//获取bool类型参数
 func (this *BaseController) GetBool(key string, defaultValues ...bool) bool { // {{{
-	defaultValue := false
-
-	if len(defaultValues) > 0 {
-		defaultValue = defaultValues[0]
-	}
-
-	ret, err := strconv.ParseBool(this.getFormValue(key))
+	ret, err := strconv.ParseBool(this.getFormValue(key, true))
 	if err != nil {
-		ret = defaultValue
+		if len(defaultValues) > 0 {
+			return defaultValues[0]
+		}
 	}
+
 	return ret
 } // }}}
 
 //获取json字符串并转换为MAP
 func (this *BaseController) GetJsonMap(key string) x.MAP { // {{{
-	ret := this.getFormValue(key)
+	ret := this.getFormValue(key, true)
 	if ret != "" {
 		json := x.JsonDecode(ret)
 		if m, ok := json.(x.MAP); ok {

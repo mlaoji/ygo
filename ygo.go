@@ -59,7 +59,7 @@ func (this *Ygo) Init() { // {{{
 func (this *Ygo) envInit() { // {{{
 
 	os.Chdir(path.Dir(os.Args[0]))
-	configFile := flag.String("f", "", "config file")
+	configFile := flag.String("f", "../conf/app.conf", "config file")
 	logPath := flag.String("o", "", "log path")
 	appRoot := flag.String("t", "", "app root path")
 	mode := flag.String("m", "", "run mode, http|rpc|tcp|ws|cli") // 支持同时运行多个逗号分隔
@@ -69,11 +69,13 @@ func (this *Ygo) envInit() { // {{{
 
 	controllers.DEBUG = *debug
 
-	config, err := x.NewConfig(*configFile)
+	config, conf_path, err := x.NewConfig(*configFile)
 	if nil != err {
 		fmt.Println("Error: ", err)
 		os.Exit(0)
 	}
+
+	fmt.Println("Config Init: ", conf_path)
 
 	x.Conf = config
 
@@ -85,8 +87,9 @@ func (this *Ygo) envInit() { // {{{
 		x.AppRoot = *appRoot
 	}
 
-	if *logPath == "" {
-		*logPath = x.Conf.Get("log_root")
+	log_root := x.Conf.Get("log_root")
+	if *logPath != "" {
+		log_root = *logPath
 	}
 
 	log_level := x.Conf.GetInt("log_level")
@@ -94,7 +97,7 @@ func (this *Ygo) envInit() { // {{{
 		log_level = 0
 	}
 
-	x.Logger.Init(*logPath, x.Conf.Get("log_name"), log_level)
+	x.Logger.Init(log_root, x.Conf.Get("log_name"), log_level)
 
 	x.LocalCache = x.NewLocalCache()
 	fmt.Println("LocalCache init")
